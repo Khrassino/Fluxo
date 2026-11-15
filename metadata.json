@@ -1,0 +1,6 @@
+{
+  "name": "Fluxo",
+  "description": "Aplicativo de produtividade minimalista: cronômetro, tarefas, progresso e área de trabalho em quadro infinito.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

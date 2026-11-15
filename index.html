@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="aurora">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Aplicativo de produtividade minimalista: cronômetro, tarefas, progresso e área de trabalho em quadro infinito.">
+<meta property="og:title" content="Fluxo">
+<meta property="og:description" content="Aplicativo de produtividade minimalista: cronômetro, tarefas, progresso e área de trabalho em quadro infinito.">
+<meta name="theme-color" content="#0a0e1e">
+<title>Fluxo</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%230a0e1e'/%3E%3Ccircle cx='50' cy='50' r='24' fill='none' stroke='%238fa2ff' stroke-width='9'/%3E%3Ccircle cx='50' cy='50' r='7' fill='%235fe3c4'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@200..800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/home.css">
+<link rel="stylesheet" href="css/timer.css">
+<link rel="stylesheet" href="css/tracker.css">
+<link rel="stylesheet" href="css/tasks.css">
+<link rel="stylesheet" href="css/workspace.css">
+<link rel="stylesheet" href="css/panel.css">
+</head>
+<body data-route="home">
+
+<!-- fundo -->
+<div id="wallpaper" aria-hidden="true"></div>
+<div id="glow-layer" aria-hidden="true"></div>
+<canvas id="fx-canvas" aria-hidden="true"></canvas>
+<div id="dim-layer" aria-hidden="true"></div>
+
+<main id="app">
+
+  <!-- INÍCIO -->
+  <section class="page" id="page-home" data-page="home">
+    <div class="home-wrap" id="home-wrap">
+      <p class="home-greet idle-hide" id="home-greet">—</p>
+      <h1 class="home-clock" id="home-clock">--:--</h1>
+      <p class="home-date idle-hide" id="home-date">—</p>
+      <div class="home-chips idle-hide" id="home-chips"></div>
+    </div>
+  </section>
+
+  <!-- CRONÔMETRO -->
+  <section class="page" id="page-timer" data-page="timer">
+    <div class="timer-wrap">
+      <div class="timer-tabs idle-hide" role="tablist">
+        <button class="tab-btn active" data-tab="countdown" role="tab">Temporizador</button>
+        <button class="tab-btn" data-tab="stopwatch" role="tab">Cronômetro</button>
+      </div>
+      <div class="timer-presets idle-hide" id="timer-presets"></div>
+      <div class="timer-stage">
+        <svg class="ring" viewBox="0 0 200 200" aria-hidden="true">
+          <defs>
+            <linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1">
+              <stop class="ring-grad-a" offset="0%"></stop>
+              <stop class="ring-grad-b" offset="100%"></stop>
+            </linearGradient>
+          </defs>
+          <circle class="ring-bg" cx="100" cy="100" r="88"></circle>
+          <circle class="ring-fg" id="ring-progress" cx="100" cy="100" r="88"></circle>
+        </svg>
+        <div class="timer-display">
+          <span id="timer-time">25:00</span>
+          <span class="timer-label idle-hide" id="timer-label">Foco</span>
+        </div>
+        <div class="timer-halo" id="timer-halo" aria-hidden="true"></div>
+      </div>
+      <p class="timer-sessions idle-hide" id="timer-sessions"></p>
+      <div class="timer-controls idle-hide">
+        <button class="icon-btn" id="timer-reset" title="Reiniciar"></button>
+        <button class="primary-btn" id="timer-toggle">Iniciar</button>
+        <button class="icon-btn" id="timer-skip" title="Pular"></button>
+      </div>
+      <p class="timer-hint idle-hide">espaço inicia / pausa · R reinicia · S alterna</p>
+    </div>
+  </section>
+
+  <!-- PROGRESSO -->
+  <section class="page" id="page-tracker" data-page="tracker">
+    <div class="idle-ghost" id="ghost-tracker" aria-hidden="true"></div>
+    <div class="tracker-wrap" id="tracker-wrap">
+      <header class="page-head" id="tracker-header">
+        <div>
+          <h1 class="page-title">Seu progresso</h1>
+          <p class="page-sub" id="tracker-since">consistência vence intensidade</p>
+        </div>
+      </header>
+      <div class="stats-grid" id="stats-grid"></div>
+      <div class="chart-card" id="chart-card">
+        <div class="chart-head">
+          <p class="chart-title"><span id="chart-period-label">Últimos 7 dias</span><span class="chart-unit">horas de uso</span></p>
+          <div class="chart-tools idle-hide">
+            <div class="chart-types" id="chart-types"></div>
+            <div class="chart-periods" id="chart-periods"></div>
+            <div class="chart-yearnav" id="chart-yearnav"></div>
+            <button class="chart-export" id="chart-export" title="Exportar dados" aria-label="Exportar dados"></button>
+          </div>
+        </div>
+        <div class="chart" id="usage-chart"></div>
+      </div>
+      <div class="chart-card" id="chart2-card" hidden>
+        <div class="chart-head">
+          <p class="chart-title"><span id="chart2-period-label">Segundo gráfico</span><span class="chart-unit" id="chart2-unit">sessões de foco</span></p>
+          <div class="chart-tools idle-hide">
+            <div class="chart-types" id="chart2-types"></div>
+            <div class="chart-periods" id="chart2-periods"></div>
+            <div class="chart-yearnav" id="chart2-yearnav"></div>
+          </div>
+        </div>
+        <div class="chart" id="usage-chart2"></div>
+      </div>
+      <div class="goal-card" id="goal-card">
+        <div class="goal-head">
+          <span class="goal-title">Meta diária</span>
+          <b class="goal-value" id="goal-value">—</b>
+        </div>
+        <div class="goal-meter"><span class="goal-meter-fill" id="goal-fill"></span></div>
+        <p class="chart-goal" id="chart-goal"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ÁREA DE TRABALHO -->
+  <section class="page page-workspace" id="page-workspace" data-page="workspace">
+    <div class="ws-shell" id="ws-shell">
+      <div class="ws-viewport" id="ws-viewport">
+        <div class="ws-world" id="ws-world">
+          <svg class="ws-arrows" id="ws-arrows" aria-hidden="true">
+            <defs>
+              <marker id="ws-arrowhead" viewBox="0 0 10 10" refX="8.2" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+                <path d="M 0 0.8 L 10 5 L 0 9.2 z" fill="context-stroke"></path>
+              </marker>
+            </defs>
+            <g id="ws-arrow-layer"></g>
+          </svg>
+        </div>
+        <canvas class="ws-ink-canvas" id="ws-ink-canvas" data-testid="ws-ink-canvas" aria-label="Camada de escrita livre"></canvas>
+      </div>
+      <div class="ws-empty" id="ws-empty"></div>
+      <header class="ws-topbar" id="ws-topbar"></header>
+      <div class="ws-ink-bar" id="ws-ink-bar" role="toolbar" aria-label="Ferramentas de escrita e desenho" hidden></div>
+      <div class="ws-ink-settings" id="ws-ink-settings" role="dialog" aria-label="Configurações de escrita" hidden></div>
+      <div class="ws-zoom" id="ws-zoom"></div>
+      <p class="ws-hint" id="ws-hint">arraste o fundo ou use dois dedos · roda ou pinça para zoom · Ctrl+V cola print · duplo clique cria cartão</p>
+      <div class="ws-popovers" id="ws-popovers"></div>
+      <div class="ws-timer-root" id="ws-timer-root"></div>
+      <div class="ws-sel-tools" id="ws-sel-tools" hidden></div>
+      <div class="ws-arrow-tools" id="ws-arrow-tools" hidden></div>
+      <div class="ws-multi-tools" id="ws-multi-tools" hidden></div>
+      <div class="ws-marquee" id="ws-marquee" hidden></div>
+      <div class="ws-drop" id="ws-drop"><span>Solte PDFs ou imagens no quadro</span></div>
+      <input type="file" id="ws-file-bg" accept="image/*" hidden>
+      <input type="file" id="ws-file-pdf" accept="application/pdf" multiple hidden>
+      <input type="file" id="ws-file-img" accept="image/*" multiple hidden>
+      <input type="file" id="ws-file-import" accept=".fluxo,.json,application/json" hidden>
+    </div>
+  </section>
+
+  <!-- TAREFAS -->
+  <section class="page" id="page-tasks" data-page="tasks">
+    <div class="idle-ghost" id="ghost-tasks" aria-hidden="true"></div>
+    <div class="tasks-wrap" id="tasks-wrap">
+      <header class="page-head tasks-head idle-hide">
+        <div>
+          <h1 class="page-title">Tarefas</h1>
+          <p class="page-sub" id="tasks-count">—</p>
+        </div>
+      </header>
+
+      <div class="tasks-summary" id="tasks-summary" hidden>
+        <div class="tasks-summary-row">
+          <span class="tasks-summary-text" id="tasks-summary-text">—</span>
+          <span class="tasks-summary-pct" id="tasks-summary-pct">0%</span>
+        </div>
+        <div class="tasks-progress-track" aria-hidden="true">
+          <span class="tasks-progress-fill" id="tasks-summary-fill"></span>
+        </div>
+      </div>
+
+      <form class="tasks-form" id="tasks-form">
+        <div class="tasks-compose-main">
+          <input class="tasks-input" id="tasks-input" type="text" placeholder="O que precisa ser feito?" autocomplete="off" maxlength="200" aria-label="Nova tarefa">
+          <button class="add-btn" id="tasks-add" type="submit" title="Adicionar tarefa" aria-label="Adicionar tarefa"></button>
+        </div>
+        <div class="tasks-compose-opts" id="tasks-compose-opts">
+          <div class="tasks-compose-group" role="group" aria-label="Vencimento da nova tarefa">
+            <button type="button" class="tasks-quick-btn" data-due-preset="today">Hoje</button>
+            <button type="button" class="tasks-quick-btn" data-due-preset="tomorrow">Amanhã</button>
+            <label class="tasks-date-field" title="Escolher data de vencimento">
+              <span class="tasks-date-ico" id="tasks-due-ico"></span>
+              <input type="date" id="tasks-due-input" aria-label="Data de vencimento">
+              <span class="tasks-date-label" id="tasks-due-label">Prazo</span>
+            </label>
+          </div>
+          <label class="tasks-meta-field" title="Prioridade">
+            <span class="tasks-meta-ico" id="tasks-prio-ico"></span>
+            <select id="tasks-priority-input" aria-label="Prioridade da nova tarefa">
+              <option value="none">Prioridade</option>
+              <option value="low">Baixa</option>
+              <option value="medium">Média</option>
+              <option value="high">Alta</option>
+            </select>
+          </label>
+          <label class="tasks-meta-field tasks-tag-field" title="Categoria ou matéria">
+            <span class="tasks-meta-ico" id="tasks-tag-ico"></span>
+            <input type="text" id="tasks-tag-input" list="tasks-tag-list" placeholder="Categoria…" maxlength="32" autocomplete="off" aria-label="Categoria da tarefa">
+            <datalist id="tasks-tag-list"></datalist>
+          </label>
+        </div>
+      </form>
+
+      <div class="tasks-controls" id="tasks-controls">
+        <div class="tasks-search-wrap" id="tasks-search-wrap">
+          <span class="tasks-search-ico" id="tasks-search-ico"></span>
+          <input type="search" class="tasks-search-input" id="tasks-search" placeholder="Buscar tarefas… (/)" autocomplete="off" aria-label="Buscar tarefas">
+          <button type="button" class="tasks-search-clear" id="tasks-search-clear" title="Limpar busca" aria-label="Limpar busca" hidden></button>
+        </div>
+        <div class="tasks-toolbar">
+          <div class="filter-chips" id="tasks-filters" role="tablist" aria-label="Filtrar tarefas">
+            <button type="button" class="filter-chip active" data-filter="all">Todas <span class="filter-num" data-fcount="all">0</span></button>
+            <button type="button" class="filter-chip" data-filter="pending">Pendentes <span class="filter-num" data-fcount="pending">0</span></button>
+            <button type="button" class="filter-chip" data-filter="today">Hoje <span class="filter-num" data-fcount="today">0</span></button>
+            <button type="button" class="filter-chip" data-filter="overdue">Atrasadas <span class="filter-num" data-fcount="overdue">0</span></button>
+            <button type="button" class="filter-chip" data-filter="done">Concluídas <span class="filter-num" data-fcount="done">0</span></button>
+          </div>
+          <div class="tasks-toolbar-right">
+            <select class="tasks-select" id="tasks-tag-filter" aria-label="Filtrar por categoria">
+              <option value="all">Todas categorias</option>
+            </select>
+            <select class="tasks-select" id="tasks-sort" aria-label="Ordenar tarefas">
+              <option value="recent">Mais recentes</option>
+              <option value="due">Vencimento</option>
+              <option value="priority">Prioridade</option>
+              <option value="oldest">Mais antigas</option>
+              <option value="alpha">A–Z</option>
+            </select>
+            <button type="button" class="link-btn" id="tasks-clear">limpar concluídas</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="tasks-undo" id="tasks-undo" hidden>
+        <span id="tasks-undo-msg">Tarefa removida</span>
+        <button type="button" class="tasks-undo-btn" id="tasks-undo-btn">Desfazer</button>
+      </div>
+
+      <ul id="task-list"></ul>
+      <div class="tasks-empty" id="tasks-empty">Nada por aqui.<br>Adicione sua primeira tarefa</div>
+    </div>
+  </section>
+
+</main>
+
+<!-- navegação -->
+<nav id="dock" aria-label="Navegação"></nav>
+
+<!-- painel de personalização -->
+<div id="panel-backdrop"></div>
+<aside id="panel" aria-label="Personalizar">
+  <header class="panel-head">
+    <h2 id="panel-title">Personalizar</h2>
+    <button class="icon-btn" id="panel-close" title="Fechar"></button>
+  </header>
+  <div id="panel-body"></div>
+</aside>
+
+<div id="toasts"></div>
+<audio id="bgm" loop preload="none"></audio>
+
+<script src="js/util.js"></script>
+<script src="js/storage.js"></script>
+<script src="js/themes.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/motion.js"></script>
+<script src="js/usage.js"></script>
+<script src="js/idle.js"></script>
+<script src="js/panel.js"></script>
+<script src="js/pages/home.js"></script>
+<script src="js/pages/timer.js"></script>
+<script src="js/pages/tracker.js"></script>
+<script src="js/tasks-core.js"></script>
+<script src="js/pages/tasks.js"></script>
+<script src="js/ink.js"></script>
+<script src="js/ws-store.js"></script>
+<script src="js/ws-brain.js"></script>
+<script src="js/workspace.js"></script>
+<script src="js/layout-edit.js"></script>
+<script src="js/router.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
