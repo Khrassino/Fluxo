@@ -133,6 +133,7 @@ test('PANEL_DRAWERS follows logical groups and page navigation order', () => {
       ['Aparência', 'themes', 'Temas e cores'],
       ['Aparência', 'appearance', 'Papel de parede e fonte'],
       ['Aparência', 'effects', 'Efeitos'],
+      ['Aparência', 'music', 'Música e atmosfera'],
       ['Páginas', 'home', 'Início'],
       ['Páginas', 'timer', 'Cronômetro'],
       ['Páginas', 'tracker', 'Progresso'],

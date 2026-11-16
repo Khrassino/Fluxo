@@ -1,13 +1,69 @@
 'use strict';
 /* ============ audio.js — trilhas calmas e som regulado (Web Audio) ============ */
+const CUSTOM_THEMATIC_TRACKS = [
+  {
+    id: 'flowers',
+    title: 'Flowers',
+    subtitle: 'Paz, amor e romance',
+    src: 'assets/aistudio/Flowers_cc092a54.mp3',
+    particleStyle: 'petals',
+    sceneId: 'flowers',
+    defaultPalette: {
+      bg: '#150c12',
+      accent: '#f4a5b8',
+      accent2: '#8ec49e',
+      text: '#fdf3f6',
+      glass: 62,
+      isLight: false,
+      wpBg: 'radial-gradient(80% 62% at 22% 84%, rgba(244,165,184,.24), transparent 64%), radial-gradient(70% 58% at 80% 18%, rgba(142,196,158,.16), transparent 62%), radial-gradient(90% 70% at 50% 45%, rgba(190,104,138,.14), transparent 66%), linear-gradient(180deg, #1b0f17 0%, #0d070b 100%)'
+    },
+    coverSvg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><defs><radialGradient id="fg" cx="50%" cy="44%" r="58%"><stop offset="0%" stop-color="#f4a5b8" stop-opacity="0.34"/><stop offset="60%" stop-color="#8ec49e" stop-opacity="0.10"/><stop offset="100%" stop-color="#150c12" stop-opacity="0"/></radialGradient></defs><rect width="120" height="120" rx="18" fill="#150c12"/><rect width="120" height="120" rx="18" fill="url(#fg)"/><path d="M60 104 C59 84 61 68 60 52" fill="none" stroke="#8ec49e" stroke-width="2.2" stroke-linecap="round"/><path d="M60 80 C47 76 41 68 42 58 C51 59 58 67 60 80 Z" fill="#8ec49e" fill-opacity="0.45" stroke="#8ec49e" stroke-width="1.3"/><path d="M60 72 C73 68 80 60 79 50 C70 51 63 59 60 72 Z" fill="#8ec49e" fill-opacity="0.35" stroke="#8ec49e" stroke-width="1.3"/><circle cx="60" cy="43" r="17" fill="#f4a5b8" fill-opacity="0.22" stroke="#f4a5b8" stroke-width="1.5"/><path d="M48 45 C47 32 60 25 69 32 C74 37 72 49 60 51 C52 52 48 47 48 45 Z" fill="#f4a5b8" fill-opacity="0.42" stroke="#fdf3f6" stroke-width="1.3"/><path d="M54 42 C54 36 62 34 65 39 C67 44 61 48 56 45" fill="none" stroke="#fdf3f6" stroke-width="1.4" stroke-linecap="round"/></svg>'
+  },
+  {
+    id: 'march',
+    title: 'March',
+    subtitle: 'Trincheira, brasa e contraste',
+    src: 'assets/aistudio/March_564a9b39.mp3',
+    particleStyle: 'embers',
+    sceneId: 'march',
+    defaultPalette: {
+      bg: '#0c0a09',
+      accent: '#f59e0b',
+      accent2: '#ef4444',
+      text: '#f6efe8',
+      glass: 66,
+      isLight: false,
+      wpBg: 'radial-gradient(85% 52% at 50% 100%, rgba(239,68,68,.24), transparent 64%), radial-gradient(70% 50% at 24% 82%, rgba(245,158,11,.18), transparent 62%), radial-gradient(75% 60% at 76% 18%, rgba(120,90,72,.14), transparent 62%), linear-gradient(180deg, #14100e 0%, #080605 100%)'
+    },
+    coverSvg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><defs><radialGradient id="mg" cx="50%" cy="88%" r="68%"><stop offset="0%" stop-color="#ef4444" stop-opacity="0.42"/><stop offset="48%" stop-color="#f59e0b" stop-opacity="0.18"/><stop offset="100%" stop-color="#0c0a09" stop-opacity="0"/></radialGradient></defs><rect width="120" height="120" rx="18" fill="#0c0a09"/><rect width="120" height="120" rx="18" fill="url(#mg)"/><path d="M12 96 L108 96" stroke="#7e7065" stroke-width="1.6" stroke-linecap="round"/><path d="M26 98 L44 52 M44 98 L26 52 M76 98 L94 52 M94 98 L76 52 M56 98 L64 46" stroke="#baa99d" stroke-width="2.1" stroke-linecap="round"/><path d="M10 74 Q36 82 60 74 T110 76" fill="none" stroke="#f59e0b" stroke-opacity="0.6" stroke-width="1.4"/><circle cx="48" cy="36" r="2.2" fill="#f59e0b"/><circle cx="71" cy="28" r="1.7" fill="#ef4444"/><circle cx="62" cy="54" r="1.5" fill="#fde68a"/></svg>'
+  }
+];
+
+function getThematicTrack(id) {
+  return CUSTOM_THEMATIC_TRACKS.find(t => t.id === id) || null;
+}
+
+function isThematicTrack(id) {
+  return !!getThematicTrack(id);
+}
+
+function buildTrackCoverSvgDataUrl(id) {
+  const meta = getThematicTrack(id);
+  if (!meta || !meta.coverSvg) return '';
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(meta.coverSvg);
+}
+
 const TRACK_LABELS = {
   none: '—',
+  flowers: 'Flowers',
+  march: 'March',
   rain: 'Chuva',
   ocean: 'Oceano',
   pad: 'Ambiente',
-  lofi: 'Lo-fi',
   fireplace: 'Lareira',
   night: 'Noite calma',
+  typing: 'Teclado',
+  writing: 'Escrita',
   custom: 'Sua música'
 };
 
@@ -32,16 +88,38 @@ const Sound = {
   compressor: null,
   warmBus: null,
   bgm: null,
+  customSrc: null,
   nodes: [],
   timers: [],
   intervals: [],
   pinkBuf: null,
   brownBuf: null,
   playing: false,
+  _ignoreBgmEvents: false,
 
   init() {
     this.bgm = typeof $ === 'function' ? $('#bgm') : null;
-    if (this.bgm) this.bgm.volume = audioHtmlVolume(Store.state.music.volume);
+    if (this.bgm) {
+      this.bgm.volume = audioHtmlVolume(Store.state.music.volume);
+      this.bgm.addEventListener('pause', () => {
+        if (this._ignoreBgmEvents) return;
+        const t = Store.state && Store.state.music && Store.state.music.track;
+        if (this.playing && (t === 'custom' || isThematicTrack(t)) && !this.bgm.ended) {
+          this.playing = false;
+          this.syncVisuals();
+          this.updateUI();
+        }
+      });
+      this.bgm.addEventListener('error', () => {
+        if (this._ignoreBgmEvents) return;
+        const t = Store.state && Store.state.music && Store.state.music.track;
+        if (this.playing && (t === 'custom' || isThematicTrack(t))) {
+          this.playing = false;
+          this.syncVisuals();
+          this.updateUI();
+        }
+      });
+    }
   },
 
   ensureCtx() {
@@ -82,7 +160,13 @@ const Sound = {
     Store.save();
   },
 
-  setCustomSource(url) { if (this.bgm) this.bgm.src = url; },
+  setCustomSource(url) {
+    this.customSrc = url || null;
+    if (this.bgm && Store.state && Store.state.music && Store.state.music.track === 'custom') {
+      if (url) this.bgm.src = url;
+      else this.bgm.removeAttribute('src');
+    }
+  },
 
   /* Ruído rosa (quente, -3 dB/oitava) para chuva suave e espuma */
   pinkNoise() {
@@ -132,14 +216,57 @@ const Sound = {
     track = track || Store.state.music.track;
     Store.state.music.track = track;
     this.stop(true);
-    if (!track || track === 'none') { Store.save(); this.updateUI(); return; }
+    if (!track || track === 'none') {
+      this.playing = false;
+      Store.save();
+      this.syncVisuals();
+      this.updateUI();
+      return;
+    }
 
-    if (track === 'custom') {
-      if (!this.bgm || !this.bgm.src) { toast('Envie um arquivo de música no painel', 'music'); this.updateUI(); return; }
+    const thematic = getThematicTrack(track);
+    if (thematic) {
+      if (!this.bgm) {
+        toast('Reprodutor de áudio indisponível', 'close');
+        this.playing = false;
+        this.syncVisuals();
+        this.updateUI();
+        return;
+      }
+      this._ignoreBgmEvents = true;
+      this.bgm.loop = true;
+      if (this.bgm.getAttribute('src') !== thematic.src) {
+        this.bgm.src = thematic.src;
+      }
+      this.bgm.currentTime = 0;
       this.bgm.volume = audioHtmlVolume(Store.state.music.volume);
+      this._ignoreBgmEvents = false;
       this.bgm.play().catch(() => {});
       this.playing = true;
-      Store.save(); this.updateUI();
+      Store.save();
+      this.syncVisuals();
+      this.updateUI();
+      return;
+    }
+
+    if (track === 'custom') {
+      if (!this.bgm || !this.customSrc) {
+        toast('Envie um arquivo de áudio nas configurações', 'music');
+        this.playing = false;
+        this.syncVisuals();
+        this.updateUI();
+        return;
+      }
+      this._ignoreBgmEvents = true;
+      this.bgm.loop = true;
+      if (this.bgm.src !== this.customSrc) this.bgm.src = this.customSrc;
+      this.bgm.volume = audioHtmlVolume(Store.state.music.volume);
+      this._ignoreBgmEvents = false;
+      this.bgm.play().catch(() => {});
+      this.playing = true;
+      Store.save();
+      this.syncVisuals();
+      this.updateUI();
       return;
     }
 
@@ -149,13 +276,15 @@ const Sound = {
       if (track === 'rain') this.buildRain(1.0);
       else if (track === 'ocean') this.buildOcean();
       else if (track === 'pad') this.buildPad();
-      else if (track === 'lofi') this.buildLofi();
       else if (track === 'fireplace') this.buildFireplace();
       else if (track === 'night') this.buildNight();
+      else if (track === 'typing') this.buildTyping();
+      else if (track === 'writing') this.buildWriting();
       else this.buildRain(1.0);
       this.playing = true;
     } catch (e) { /* falha silenciosa */ }
     Store.save();
+    this.syncVisuals();
     this.updateUI();
   },
 
@@ -169,16 +298,21 @@ const Sound = {
       try { n.disconnect(); } catch (e) {}
     });
     this.nodes = [];
-    if (this.bgm) this.bgm.pause();
+    if (this.bgm) {
+      this._ignoreBgmEvents = true;
+      try { this.bgm.pause(); } catch (e) {}
+      this._ignoreBgmEvents = false;
+    }
     if (!silent) {
       this.playing = false;
+      this.syncVisuals();
       this.updateUI();
     }
   },
 
   toggle() {
     if (this.playing) this.stop();
-    else if (Store.state.music.track === 'none') this.play('lofi');
+    else if (Store.state.music.track === 'none') this.play('night');
     else this.play();
   },
 
@@ -413,7 +547,7 @@ const Sound = {
     this.intervals.push(setInterval(step, intervalMs));
   },
 
-  buildLofi(opts) {
+  buildNightChords(opts) {
     opts = opts || {};
     const ctx = this.ctx;
     const lp = ctx.createBiquadFilter();
@@ -568,7 +702,207 @@ const Sound = {
 
   buildNight() {
     this.buildRain(0.55);
-    this.buildLofi({ noVinyl: true });
+    this.buildNightChords({ noVinyl: true });
+  },
+
+  /* Teclado macio em ritmo humano para estudo e produtividade */
+  buildTyping() {
+    const ctx = this.ctx;
+    // Leito sutil de sala silenciosa para não soar cortado entre teclas
+    const room = ctx.createBufferSource();
+    room.buffer = this.brownNoise();
+    room.loop = true;
+    const roomLp = ctx.createBiquadFilter();
+    roomLp.type = 'lowpass';
+    roomLp.frequency.value = 180;
+    const roomG = ctx.createGain();
+    roomG.gain.value = 0.014;
+    room.connect(roomLp);
+    roomLp.connect(roomG);
+    roomG.connect(this.warmBus);
+    room.start();
+    this.nodes.push(room, roomLp, roomG);
+
+    const triggerKey = (kind) => {
+      if (!this.playing) return;
+      try {
+        const t = ctx.currentTime + 0.005;
+        const isSpace = kind === 'space';
+        const isEnter = kind === 'enter';
+
+        // 1. Corpo abafado ("thock" macio da tecla)
+        const osc = ctx.createOscillator();
+        osc.type = isSpace ? 'sine' : 'triangle';
+        const startHz = isSpace ? 132 + Math.random() * 14 : (isEnter ? 148 + Math.random() * 18 : 172 + Math.random() * 44);
+        const endHz = isSpace ? 54 : (isEnter ? 62 : 76 + Math.random() * 14);
+        osc.frequency.setValueAtTime(startHz, t);
+        osc.frequency.exponentialRampToValueAtTime(endHz, t + 0.024);
+
+        const og = ctx.createGain();
+        const thockGain = isSpace ? 0.095 : (isEnter ? 0.088 : 0.055 + Math.random() * 0.03);
+        og.gain.setValueAtTime(0.0001, t);
+        og.gain.linearRampToValueAtTime(thockGain, t + 0.003);
+        og.gain.exponentialRampToValueAtTime(0.0001, t + (isSpace ? 0.048 : 0.036));
+        osc.connect(og);
+        og.connect(this.warmBus);
+        osc.start(t);
+        osc.stop(t + 0.06);
+
+        // 2. Clique tátil suave do switch (ruído filtrado quente)
+        const clickSrc = ctx.createBufferSource();
+        clickSrc.buffer = this.pinkNoise();
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.value = isSpace ? 980 + Math.random() * 240 : (1450 + Math.random() * 680);
+        bp.Q.value = 1.7;
+        const cg = ctx.createGain();
+        const clickPeak = isSpace ? 0.055 : 0.042 + Math.random() * 0.028;
+        cg.gain.setValueAtTime(0.0001, t);
+        cg.gain.linearRampToValueAtTime(clickPeak, t + 0.002);
+        cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.018);
+        clickSrc.connect(bp);
+        bp.connect(cg);
+        cg.connect(this.warmBus);
+        clickSrc.start(t, Math.random() * 2.5, 0.03);
+
+        this.timers.push(setTimeout(() => {
+          try {
+            osc.disconnect(); og.disconnect();
+            clickSrc.disconnect(); bp.disconnect(); cg.disconnect();
+          } catch (e) {}
+        }, 160));
+      } catch (e) {}
+    };
+
+    let burstLeft = 5 + Math.floor(Math.random() * 8);
+    let sinceSpace = 0;
+
+    const scheduleNext = () => {
+      if (!this.playing) return;
+      let delayMs = 95 + Math.random() * 105;
+      let kind = 'char';
+
+      if (burstLeft <= 0) {
+        kind = Math.random() < 0.28 ? 'enter' : 'space';
+        burstLeft = 4 + Math.floor(Math.random() * 10);
+        sinceSpace = 0;
+        delayMs = 340 + Math.random() * 780;
+      } else {
+        sinceSpace++;
+        burstLeft--;
+        if (sinceSpace >= 4 && Math.random() < 0.24) {
+          kind = 'space';
+          sinceSpace = 0;
+          delayMs = 130 + Math.random() * 120;
+        }
+      }
+
+      triggerKey(kind);
+      this.timers.push(setTimeout(scheduleNext, delayMs));
+    };
+    this.timers.push(setTimeout(scheduleNext, 120));
+  },
+
+  /* Escrita suave no papel (traços de lápis/caneta + farfalhar sutil) */
+  buildWriting() {
+    const ctx = this.ctx;
+    // Ambiência quente de mesa / papel em repouso
+    const desk = ctx.createBufferSource();
+    desk.buffer = this.brownNoise();
+    desk.loop = true;
+    const deskLp = ctx.createBiquadFilter();
+    deskLp.type = 'lowpass';
+    deskLp.frequency.value = 260;
+    const deskG = ctx.createGain();
+    deskG.gain.value = 0.022;
+    desk.connect(deskLp);
+    deskLp.connect(deskG);
+    deskG.connect(this.warmBus);
+    desk.start();
+    this.nodes.push(desk, deskLp, deskG);
+
+    const triggerStroke = (kind) => {
+      if (!this.playing) return;
+      try {
+        const t = ctx.currentTime + 0.008;
+        const isRustle = kind === 'rustle';
+        const isSweep = kind === 'sweep';
+        const dur = isRustle ? 0.34 : (isSweep ? 0.16 + Math.random() * 0.10 : 0.045 + Math.random() * 0.075);
+
+        const src = ctx.createBufferSource();
+        src.buffer = this.pinkNoise();
+
+        // Grão principal do papel (médio-agudo suave sem chiado estridente)
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.value = isRustle
+          ? 760 + Math.random() * 240
+          : (1550 + Math.random() * 780);
+        bp.Q.value = isRustle ? 0.85 : (1.5 + Math.random() * 0.9);
+
+        // Leve corpo amadeirado da mesa durante o traço
+        const lpBody = ctx.createBiquadFilter();
+        lpBody.type = 'lowpass';
+        lpBody.frequency.value = 440;
+
+        const gMain = ctx.createGain();
+        const peak = isRustle ? 0.048 : (isSweep ? 0.072 : 0.052 + Math.random() * 0.036);
+        gMain.gain.setValueAtTime(0.0001, t);
+        gMain.gain.linearRampToValueAtTime(peak, t + dur * 0.28);
+        gMain.gain.linearRampToValueAtTime(peak * 0.68, t + dur * 0.68);
+        gMain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+
+        const gBody = ctx.createGain();
+        gBody.gain.setValueAtTime(0.0001, t);
+        gBody.gain.linearRampToValueAtTime(peak * 0.38, t + dur * 0.32);
+        gBody.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+
+        src.connect(bp);
+        bp.connect(gMain);
+        gMain.connect(this.warmBus);
+
+        src.connect(lpBody);
+        lpBody.connect(gBody);
+        gBody.connect(this.warmBus);
+
+        src.start(t, Math.random() * 2.4, dur + 0.03);
+
+        this.timers.push(setTimeout(() => {
+          try {
+            src.disconnect(); bp.disconnect(); lpBody.disconnect();
+            gMain.disconnect(); gBody.disconnect();
+          } catch (e) {}
+        }, Math.round((dur + 0.18) * 1000)));
+      } catch (e) {}
+    };
+
+    let strokesLeft = 4 + Math.floor(Math.random() * 6);
+    let wordsDone = 0;
+
+    const scheduleNext = () => {
+      if (!this.playing) return;
+      let delayMs = 78 + Math.random() * 82;
+      let kind = 'stroke';
+
+      if (strokesLeft <= 0) {
+        wordsDone++;
+        strokesLeft = 3 + Math.floor(Math.random() * 7);
+        if (wordsDone % 7 === 0) {
+          kind = 'rustle';
+          delayMs = 680 + Math.random() * 720;
+        } else {
+          kind = Math.random() < 0.25 ? 'sweep' : 'stroke';
+          delayMs = 220 + Math.random() * 320;
+        }
+      } else {
+        strokesLeft--;
+        if (Math.random() < 0.16) kind = 'sweep';
+      }
+
+      triggerStroke(kind);
+      this.timers.push(setTimeout(scheduleNext, delayMs));
+    };
+    this.timers.push(setTimeout(scheduleNext, 140));
   },
 
   /* ---------- efeitos pontuais suavizados ---------- */
@@ -615,11 +949,25 @@ const Sound = {
     setTimeout(() => { try { o.disconnect(); g.disconnect(); } catch (e) {} }, 380);
   },
 
+  syncVisuals() {
+    if (typeof Themes !== 'undefined' && typeof Themes.apply === 'function') Themes.apply({ fade: true });
+    if (typeof Motion !== 'undefined' && typeof Motion.readState === 'function') Motion.readState();
+  },
+
   updateUI() {
     if (typeof HomePage !== 'undefined') HomePage.updateMusicChip();
+    if (typeof Panel !== 'undefined' && typeof Panel.syncMusicUI === 'function') Panel.syncMusicUI();
   }
 };
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { TRACK_LABELS, audioGainCurve, audioHtmlVolume };
+  module.exports = {
+    CUSTOM_THEMATIC_TRACKS,
+    TRACK_LABELS,
+    getThematicTrack,
+    isThematicTrack,
+    buildTrackCoverSvgDataUrl,
+    audioGainCurve,
+    audioHtmlVolume
+  };
 }

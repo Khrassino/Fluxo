@@ -116,9 +116,11 @@ test('Audio volume curve stays soft and bounded while supporting all cozy tracks
   assert.equal(out.labels.rain, 'Chuva');
   assert.equal(out.labels.ocean, 'Oceano');
   assert.equal(out.labels.pad, 'Ambiente');
-  assert.equal(out.labels.lofi, 'Lo-fi');
+  assert.equal(out.labels.lofi, undefined);
   assert.equal(out.labels.fireplace, 'Lareira');
   assert.equal(out.labels.night, 'Noite calma');
+  assert.equal(out.labels.typing, 'Teclado');
+  assert.equal(out.labels.writing, 'Escrita');
 
   assert.equal(out.g0, 0);
   assert.ok(out.g35 > 0.02 && out.g35 < 0.08);
@@ -127,6 +129,79 @@ test('Audio volume curve stays soft and bounded while supporting all cozy tracks
   assert.equal(out.h0, 0);
   assert.ok(out.h50 > 0.1 && out.h50 < 0.25);
   assert.ok(out.h100 > out.h50 && out.h100 <= 0.56);
+});
+
+test('Typing and Writing ambient study tracks synthesize nodes cleanly and stop without leaks', () => {
+  const ctx = loadBrainAndAudioContext();
+  const out = JSON.parse(vm.runInContext(`(() => {
+    const makeParam = (init = 0) => ({
+      value: init,
+      setValueAtTime: () => {},
+      linearRampToValueAtTime: () => {},
+      exponentialRampToValueAtTime: () => {},
+      setTargetAtTime: () => {},
+    });
+    const makeNode = (extra = {}) => Object.assign({
+      connect: () => {},
+      disconnect: () => {},
+      start: () => {},
+      stop: () => {},
+    }, extra);
+    window.AudioContext = function MockAudioContext() {
+      this.sampleRate = 44100;
+      this.currentTime = 1.0;
+      this.state = 'running';
+      this.destination = makeNode();
+      this.resume = () => Promise.resolve();
+      this.createGain = () => makeNode({ gain: makeParam(1) });
+      this.createBiquadFilter = () => makeNode({ type: 'lowpass', frequency: makeParam(1000), Q: makeParam(1) });
+      this.createDynamicsCompressor = () => makeNode({
+        threshold: makeParam(-24), knee: makeParam(18), ratio: makeParam(4), attack: makeParam(0.04), release: makeParam(0.25)
+      });
+      this.createOscillator = () => makeNode({ type: 'sine', frequency: makeParam(440), detune: makeParam(0) });
+      this.createBuffer = (_ch, len) => ({
+        getChannelData: () => new Float32Array(len)
+      });
+      this.createBufferSource = () => makeNode({ buffer: null, loop: false });
+    };
+
+    Store.load();
+    Sound.play('typing');
+    const typingState = {
+      playing: Sound.playing,
+      track: Store.state.music.track,
+      nodes: Sound.nodes.length,
+      timers: Sound.timers.length,
+    };
+    Sound.play('writing');
+    const writingState = {
+      playing: Sound.playing,
+      track: Store.state.music.track,
+      nodes: Sound.nodes.length,
+      timers: Sound.timers.length,
+    };
+    Sound.stop();
+    const stoppedState = {
+      playing: Sound.playing,
+      nodes: Sound.nodes.length,
+      timers: Sound.timers.length,
+    };
+    return JSON.stringify({ typingState, writingState, stoppedState });
+  })()`, ctx));
+
+  assert.equal(out.typingState.playing, true);
+  assert.equal(out.typingState.track, 'typing');
+  assert.ok(out.typingState.nodes >= 3);
+  assert.ok(out.typingState.timers >= 1);
+
+  assert.equal(out.writingState.playing, true);
+  assert.equal(out.writingState.track, 'writing');
+  assert.ok(out.writingState.nodes >= 3);
+  assert.ok(out.writingState.timers >= 1);
+
+  assert.equal(out.stoppedState.playing, false);
+  assert.equal(out.stoppedState.nodes, 0);
+  assert.equal(out.stoppedState.timers, 0);
 });
 
 test('ws-brain normalizes tags, checklists, arrows and computes group enclosure + connections', () => {

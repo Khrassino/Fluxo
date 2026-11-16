@@ -16,8 +16,11 @@ function pSection(icon, title) {
   sec.append(el('h3', null, svgIcon(icon) + '<span>' + title + '</span>'));
   return sec;
 }
-function pSub(title) {
-  return el('h4', 'panel-sub', title);
+function pSub(title, badge) {
+  const h = el('h4', 'panel-sub');
+  h.append(el('span', null, title));
+  if (badge) h.append(el('span', 'panel-badge-test', badge));
+  return h;
 }
 function pCtl(labelHtml) {
   const c = el('div', 'ctl');
@@ -205,6 +208,7 @@ const PANEL_DRAWERS = [
   { id: 'themes',     label: 'Temas e cores',           icon: 'palette', group: 'Aparência' },
   { id: 'appearance', label: 'Papel de parede e fonte', icon: 'image',   group: 'Aparência' },
   { id: 'effects',    label: 'Efeitos',                 icon: 'motion',  group: 'Aparência' },
+  { id: 'music',      label: 'Música e atmosfera',      icon: 'music',   group: 'Aparência' },
   { id: 'home',       label: 'Início',                  icon: 'home',    group: 'Páginas' },
   { id: 'timer',      label: 'Cronômetro',              icon: 'timer',   group: 'Páginas' },
   { id: 'tracker',    label: 'Progresso',               icon: 'chart',   group: 'Páginas' },
@@ -255,6 +259,7 @@ const Panel = {
       themes:     () => this.themesSection(),
       appearance: () => this.appearanceSection(),
       effects:    () => this.effectsSection(),
+      music:      () => this.musicSection(),
       home:       () => this.homeSection(),
       timer:      () => this.timerSection(),
       tracker:    () => this.trackerSection(),
@@ -553,8 +558,188 @@ const Panel = {
       Store.save();
     }));
     sec.append(pGroupBox);
-    sec.append(el('p', 'panel-note', 'Chuva cai e desvia de leve do mouse; Onda cria ondas circulares em pontos aleatórios; Poeira flutua; Tela molhada escorre; Neve deriva suavemente.'));
+    sec.append(el('p', 'panel-note', 'Chuva cai e desvia de leve do mouse; Onda cria ondas circulares; Poeira flutua; Tela molhada escorre; Neve deriva; Teclas faz teclas subirem e destaca as teclas que você digitar.'));
     return sec;
+  },
+
+  /* ================= 4. música e atmosfera ================= */
+  musicSection() {
+    const m = Store.state.music || {};
+    const fx = Store.state.effects || { level: 'full' };
+    const globalOff = fx.level === 'off';
+    const sec = pSection('music', 'Música e atmosfera');
+    const tracks = typeof CUSTOM_THEMATIC_TRACKS !== 'undefined' ? CUSTOM_THEMATIC_TRACKS : [];
+
+    sec.append(pSub('Músicas temáticas', 'Testes'));
+    sec.append(el('p', 'panel-note', 'Cada música temática transforma a paleta do aplicativo conforme a capa e ativa efeitos sutis enquanto toca.'));
+
+    const grid = el('div', 'music-cover-grid');
+    tracks.forEach(tr => {
+      const isSelected = m.track === tr.id;
+      const isPlaying = isSelected && typeof Sound !== 'undefined' && Sound.playing;
+      const coverSrc = tr.coverSrc || (typeof buildTrackCoverSvgDataUrl === 'function' ? buildTrackCoverSvgDataUrl(tr.id) : '');
+
+      const tile = el('button', 'music-cover-tile' + (isSelected ? ' active' : '') + (isPlaying ? ' playing' : ''));
+      tile.type = 'button';
+      tile.dataset.trackId = tr.id;
+      tile.title = isPlaying ? 'Pausar ' + tr.title : 'Tocar ' + tr.title;
+      tile.setAttribute('aria-label', isPlaying ? 'Pausar ' + tr.title : 'Tocar ' + tr.title);
+      tile.setAttribute('aria-pressed', isPlaying ? 'true' : 'false');
+
+      if (coverSrc) {
+        const img = el('img');
+        img.src = coverSrc;
+        img.alt = 'Capa de ' + tr.title;
+        img.loading = 'lazy';
+        tile.append(img);
+      }
+
+      const overlay = el('span', 'music-cover-overlay');
+      overlay.setAttribute('aria-hidden', 'true');
+      overlay.append(el('span', 'music-cover-play-badge', svgIcon(isPlaying ? 'pause' : 'play')));
+      tile.append(overlay);
+
+      tile.addEventListener('click', () => {
+        if (Store.state.music.track === tr.id && Sound.playing) Sound.stop();
+        else Sound.play(tr.id);
+        this.render();
+      });
+
+      grid.append(tile);
+    });
+    sec.append(grid);
+
+    sec.append(pSub('Trilhas de estudo e volume'));
+    const hasCustomAudio = typeof Sound !== 'undefined' && !!Sound.customSrc;
+    const opts = [
+      { id: 'none',      label: 'Sem música' },
+      { id: 'rain',      label: 'Chuva' },
+      { id: 'ocean',     label: 'Oceano' },
+      { id: 'pad',       label: 'Ambiente' },
+      { id: 'fireplace', label: 'Lareira' },
+      { id: 'night',     label: 'Noite calma' },
+      { id: 'typing',    label: 'Teclado' },
+      { id: 'writing',   label: 'Escrita' }
+    ];
+    if (hasCustomAudio) opts.push({ id: 'custom', label: 'Sua música' });
+
+    const musicCtl = pCtl('<span>Trilha ambiente</span>');
+    musicCtl.append(chipGroup(opts, m.track || 'none', (id) => {
+      Store.state.music.track = id;
+      Store.save();
+      if (id === 'none') {
+        Sound.stop();
+        Sound.syncVisuals();
+      } else {
+        Sound.play(id);
+      }
+      this.render();
+    }));
+    sec.append(musicCtl);
+
+    sec.append(sliderRow('Volume', 0, 100, Math.round((m.volume == null ? 0.35 : m.volume) * 100), v => v + '%', v => Sound.setVolume(v / 100)));
+
+    const musicBtns = [uploadBtn(hasCustomAudio ? 'Trocar áudio' : 'Enviar áudio', 'audio/*', async (file) => {
+      if (!file.type.startsWith('audio/')) { toast('Escolha um arquivo de áudio', 'close'); return; }
+      if (file.size > 12 * 1024 * 1024) { toast('Áudio muito grande (máx. 12 MB)', 'close'); return; }
+      try {
+        const url = await readFileAsDataURL(file);
+        await Files.put('customMusic', url);
+        Sound.setCustomSource(url);
+        Store.state.music.track = 'custom';
+        Store.save();
+        Sound.play('custom');
+        this.render();
+        toast('Áudio carregado', 'music');
+      } catch (e) { toast('Não foi possível salvar o áudio', 'close'); }
+    })];
+    if (hasCustomAudio) {
+      const rmMusic = el('button', 'chip', 'Remover áudio');
+      rmMusic.type = 'button';
+      rmMusic.addEventListener('click', async () => {
+        await Files.del('customMusic');
+        Sound.setCustomSource(null);
+        if (Sound.bgm && Store.state.music.track === 'custom') {
+          Sound.bgm.pause();
+          Sound.bgm.removeAttribute('src');
+          Sound.bgm.load();
+        }
+        if (Store.state.music.track === 'custom') {
+          Store.state.music.track = 'none';
+          Sound.stop();
+        }
+        Store.save();
+        this.render();
+        toast('Áudio removido', 'trash');
+      });
+      musicBtns.push(rmMusic);
+    }
+    sec.append(actionRow(musicBtns));
+
+    sec.append(pSub('Tema e animações da música'));
+    if (globalOff) {
+      const hint = el('div', 'panel-hint-box', '<span>Os efeitos globais estão desligados.</span>');
+      const goBtn = el('button', 'panel-hint-link', 'Configurar');
+      goBtn.type = 'button';
+      goBtn.addEventListener('click', () => this.openDrawer('effects'));
+      hint.append(goBtn);
+      sec.append(hint);
+    }
+    sec.append(switchRow('Aplicar tema da capa enquanto toca', m.dynamicTheme !== false, (on) => {
+      Store.state.music.dynamicTheme = on;
+      Store.save();
+      Sound.syncVisuals();
+    }));
+    sec.append(switchRow('Animações visuais da música', m.visualEffects !== false, (on) => {
+      Store.state.music.visualEffects = on;
+      Store.save();
+      Sound.syncVisuals();
+      this.render();
+    }));
+
+    const visGroup = pGroup(globalOff || m.visualEffects === false);
+    visGroup.append(switchRow('Elementos no fundo (ramos e cercas)', m.sceneElements !== false, (on) => {
+      Store.state.music.sceneElements = on;
+      Store.save();
+      Sound.syncVisuals();
+    }));
+    visGroup.append(switchRow('Partículas musicais (pétalas e brasas)', m.sceneParticles !== false, (on) => {
+      Store.state.music.sceneParticles = on;
+      Store.save();
+      Sound.syncVisuals();
+    }));
+    visGroup.append(switchRow('Interação com o mouse', m.sceneInteractive !== false, (on) => {
+      Store.state.music.sceneInteractive = on;
+      Store.save();
+      Sound.syncVisuals();
+    }));
+    visGroup.append(sliderRow('Intensidade das animações', 0, 100, m.sceneIntensity == null ? 65 : m.sceneIntensity, v => v + '%', v => {
+      Store.state.music.sceneIntensity = v;
+      Store.save();
+      if (typeof Motion !== 'undefined') Motion.readState();
+    }));
+    sec.append(visGroup);
+    sec.append(el('p', 'panel-note', 'Flowers traz ramos e rosas na base com pétalas que desviam do mouse; March traz cercas de trincheira e brasas subindo com o ponteiro.'));
+    return sec;
+  },
+
+  syncMusicUI() {
+    if (!document.body.classList.contains('panel-open') || this.openId !== 'music') return;
+    const m = Store.state.music || {};
+    $$('.music-cover-tile', $('#panel-body')).forEach(tile => {
+      const id = tile.dataset.trackId;
+      const meta = typeof getThematicTrack === 'function' ? getThematicTrack(id) : null;
+      const title = meta ? meta.title : id;
+      const isSelected = m.track === id;
+      const isPlaying = isSelected && typeof Sound !== 'undefined' && Sound.playing;
+      tile.classList.toggle('active', isSelected);
+      tile.classList.toggle('playing', isPlaying);
+      tile.title = isPlaying ? 'Pausar ' + title : 'Tocar ' + title;
+      tile.setAttribute('aria-label', isPlaying ? 'Pausar ' + title : 'Tocar ' + title);
+      tile.setAttribute('aria-pressed', isPlaying ? 'true' : 'false');
+      const badge = tile.querySelector('.music-cover-play-badge');
+      if (badge) badge.innerHTML = svgIcon(isPlaying ? 'pause' : 'play');
+    });
   },
 
   /* ---- botão que abre o editor direto na página ---- */
@@ -1396,66 +1581,12 @@ const Panel = {
     }));
     sec.append(el('p', 'panel-note', 'Arraste a bolinha para 8 posições na tela. Perto das bordas direitas, o painel abre pela esquerda.'));
 
-    sec.append(pSub('Música de fundo'));
-    const m = Store.state.music;
-    const hasCustom = !!(Sound.bgm && Sound.bgm.getAttribute('src'));
-    const opts = [
-      { id: 'none',      label: 'Sem música' },
-      { id: 'rain',      label: 'Chuva' },
-      { id: 'ocean',     label: 'Oceano' },
-      { id: 'pad',       label: 'Ambiente' },
-      { id: 'lofi',      label: 'Lo-fi' },
-      { id: 'fireplace', label: 'Lareira' },
-      { id: 'night',     label: 'Noite calma' }
-    ];
-    if (hasCustom) opts.push({ id: 'custom', label: 'Sua música' });
-    const musicCtl = pCtl('<span>Trilha</span>');
-    musicCtl.append(chipGroup(opts, m.track, (id) => {
-      Store.state.music.track = id;
-      Store.save();
-      if (id === 'none') Sound.stop();
-      else Sound.play(id);
-      this.render();
-    }));
-    sec.append(musicCtl);
-    sec.append(sliderRow('Volume', 0, 100, Math.round(m.volume * 100), v => v + '%', v => Sound.setVolume(v / 100)));
-
-    const musicBtns = [uploadBtn(hasCustom ? 'Trocar arquivo' : 'Enviar música', 'audio/*', async (file) => {
-      if (!file.type.startsWith('audio/')) { toast('Escolha um arquivo de áudio', 'close'); return; }
-      if (file.size > 12 * 1024 * 1024) { toast('Áudio muito grande (máx. 12 MB)', 'close'); return; }
-      try {
-        const url = await readFileAsDataURL(file);
-        await Files.put('customMusic', url);
-        Sound.setCustomSource(url);
-        Store.state.music.track = 'custom';
-        Store.save();
-        Sound.play('custom');
-        this.render();
-        toast('Música carregada', 'music');
-      } catch (e) { toast('Não foi possível salvar o áudio', 'close'); }
-    })];
-    if (hasCustom) {
-      const rmMusic = el('button', 'chip', 'Remover música');
-      rmMusic.type = 'button';
-      rmMusic.addEventListener('click', async () => {
-        await Files.del('customMusic');
-        if (Sound.bgm) {
-          Sound.bgm.pause();
-          Sound.bgm.removeAttribute('src');
-          Sound.bgm.load();
-        }
-        if (Store.state.music.track === 'custom') {
-          Store.state.music.track = 'none';
-          Sound.stop();
-        }
-        Store.save();
-        this.render();
-        toast('Música removida', 'trash');
-      });
-      musicBtns.push(rmMusic);
-    }
-    sec.append(actionRow(musicBtns));
-    sec.append(el('p', 'panel-note', 'Trilhas calmas geradas em tempo real com volume suavizado para leitura e estudo.'));
+    const musicShortcut = el('div', 'panel-hint-box', '<span>Músicas temáticas, trilhas e capas ficam em Aparência.</span>');
+    const goMusic = el('button', 'panel-hint-link', 'Abrir música');
+    goMusic.type = 'button';
+    goMusic.addEventListener('click', () => this.openDrawer('music'));
+    musicShortcut.append(goMusic);
+    sec.append(musicShortcut);
 
     sec.append(pSub('Dados e backup'));
     sec.append(el('p', 'panel-note',

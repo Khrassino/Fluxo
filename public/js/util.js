@@ -90,6 +90,7 @@ const ICON_PATHS = {
   chevU:    '<path d="m5 14.5 7-7 7 7"/>',
   chevD:    '<path d="m5 9.5 7 7 7-7"/>',
   leaf:     '<path d="M20 4C12 4 5 8 5 15a5 5 0 0 0 5 5c7 0 10-7 10-16z"/><path d="M5.5 19.5C7.5 13.5 11.5 10 16.5 8"/>',
+  flower:   '<circle cx="12" cy="11" r="2.2"/><path d="M12 3.5a2.6 2.6 0 0 1 2.2 4 2.6 2.6 0 0 1 4.1 2.9 2.6 2.6 0 0 1-1.7 4.3 2.6 2.6 0 0 1-4.6 1.5 2.6 2.6 0 0 1-4.6-1.5 2.6 2.6 0 0 1-1.7-4.3 2.6 2.6 0 0 1 4.1-2.9 2.6 2.6 0 0 1 2.2-4z"/><path d="M12 16v5"/>',
   sun:      '<circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.4 5.4l1.6 1.6M17 17l1.6 1.6M18.6 5.4 17 7M7 17l-1.6 1.6"/>',
   snow:     '<path d="M12 3v18M4.2 7.5l15.6 9M19.8 7.5 4.2 16.5"/><path d="m9.4 4.4 2.6 2 2.6-2M9.4 19.6l2.6-2 2.6 2"/>',
   bolt:     '<path d="M13 2 5 13h6l-1 9 8-11h-6z"/>',
@@ -117,6 +118,10 @@ const ICON_PATHS = {
   tag:      '<path d="M4 12V4h8l8 8-8 8z"/><circle cx="8.5" cy="8.5" r="1" fill="currentColor" stroke="none"/>',
   alert:    '<circle cx="12" cy="12" r="9"/><path d="M12 8v4.8"/><circle cx="12" cy="16.5" r=".8" fill="currentColor" stroke="none"/>',
   sublist:  '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r="1" fill="currentColor" stroke="none"/>',
+  alignL:   '<path d="M4 6h16M4 10h10M4 14h14M4 18h8"/>',
+  alignC:   '<path d="M4 6h16M7 10h10M5 14h14M8 18h8"/>',
+  alignR:   '<path d="M4 6h16M10 10h10M6 14h14M12 18h8"/>',
+  alignJ:   '<path d="M4 6h16M4 10h16M4 14h16M4 18h16"/>',
   logo:     '<circle cx="12" cy="12" r="7.6"/><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/>'
 };
 

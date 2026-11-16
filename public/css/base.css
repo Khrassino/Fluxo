@@ -11,6 +11,7 @@ body {
   text-rendering: optimizeLegibility;
   user-select: none;
   -webkit-user-select: none;
+  transition: background-color 1.15s ease, color .95s ease;
 }
 input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="date"]),
 textarea,
@@ -125,12 +126,42 @@ ul { list-style: none; }
   --accent-glow: rgba(244,63,94,.32);
   --danger: #fb7185;
 }
+[data-theme="flowers"] {
+  color-scheme: dark;
+  --bg: #150c12; --bg-soft: #22141e;
+  --surface: rgba(244,165,184,.10); --surface-2: rgba(244,165,184,.17);
+  --border: rgba(244,165,184,.20);
+  --glass: rgba(21,12,18,.62); --glass-strong: rgba(21,12,18,.92);
+  --text: #fdf3f6; --text-dim: #cfaebd; --text-faint: #947684;
+  --accent: #f4a5b8; --accent-2: #8ec49e;
+  --accent-soft: rgba(244,165,184,.16); --accent-contrast: #0a0e1e;
+  --accent-glow: rgba(244,165,184,.36);
+  --danger: #ff6b81;
+}
+[data-theme="march"] {
+  color-scheme: dark;
+  --bg: #0c0a09; --bg-soft: #1b1410;
+  --surface: rgba(245,158,11,.10); --surface-2: rgba(245,158,11,.17);
+  --border: rgba(245,158,11,.20);
+  --glass: rgba(12,10,9,.66); --glass-strong: rgba(12,10,9,.94);
+  --text: #f6efe8; --text-dim: #bda897; --text-faint: #847060;
+  --accent: #f59e0b; --accent-2: #ef4444;
+  --accent-soft: rgba(245,158,11,.16); --accent-contrast: #0a0e1e;
+  --accent-glow: rgba(245,158,11,.36);
+  --danger: #ff6b81;
+}
 
 /* ============ camadas de fundo ============ */
-#wallpaper {
+#wallpaper,
+#wallpaper-fade {
   position: fixed; inset: -90px; z-index: 0;
   background-size: cover; background-position: center;
   will-change: transform;
+}
+#wallpaper-fade {
+  pointer-events: none;
+  opacity: 0;
+  will-change: opacity, transform;
 }
 #wallpaper::after { /* grão sutil */
   content: ''; position: absolute; inset: 0; pointer-events: none;
@@ -144,6 +175,56 @@ ul { list-style: none; }
   background: radial-gradient(circle at center, var(--accent-2) 0%, transparent 62%);
   opacity: .12; filter: blur(30px);
   pointer-events: none; will-change: transform;
+  transition: background 1.2s ease, opacity 1.2s ease;
+}
+#music-scene {
+  position: fixed; inset: 0; z-index: 2;
+  pointer-events: none; overflow: hidden;
+  opacity: 0;
+  transition: opacity 1.25s cubic-bezier(.22, .61, .36, 1);
+}
+#music-scene.active { opacity: 1; }
+#music-scene .ms-layer {
+  position: absolute; left: -64px; right: -64px; bottom: -26px; top: 0;
+  pointer-events: none;
+  will-change: transform;
+  transform-origin: 50% 100%;
+}
+#music-scene .ms-layer-back { opacity: .54; }
+#music-scene .ms-layer-front { opacity: .90; }
+#music-scene .ms-span-svg {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  width: 100%; height: clamp(180px, 28vh, 290px);
+  display: block; overflow: visible;
+}
+#music-scene .ms-cluster-l,
+#music-scene .ms-cluster-r {
+  position: absolute; bottom: 2px;
+  width: clamp(250px, 34vw, 520px);
+  height: auto;
+  display: block; overflow: visible;
+}
+#music-scene .ms-cluster-l { left: 32px; }
+#music-scene .ms-cluster-r { right: 32px; }
+#music-scene.scene-flowers {
+  color: var(--accent);
+}
+#music-scene.scene-flowers::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 34vh;
+  background: radial-gradient(80% 90% at 50% 100%, var(--accent-soft), transparent 72%);
+  opacity: .55; pointer-events: none;
+}
+#music-scene.scene-march {
+  color: #9eb0be;
+}
+#music-scene.scene-march .ms-cluster-l,
+#music-scene.scene-march .ms-cluster-r {
+  bottom: 22px;
+}
+#music-scene.scene-march::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 24vh;
+  background: linear-gradient(to top, rgba(6,5,5,.78) 0%, rgba(239,68,68,.07) 38%, transparent 100%);
+  pointer-events: none;
 }
 #fx-canvas { position: fixed; inset: 0; z-index: 2; pointer-events: none; }
 #dim-layer {
@@ -558,4 +639,5 @@ body.idle #page-tasks .tasks-wrap {
 
 @media (prefers-reduced-motion: reduce) {
   .page.active, .toast { animation: none !important; }
+  body, #music-scene, #wallpaper-fade, #glow-layer { transition: none !important; }
 }

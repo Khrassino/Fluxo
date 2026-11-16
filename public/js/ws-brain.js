@@ -14,7 +14,7 @@ const WS_CARD_TINTS = [
 
 const WS_ARROW_KINDS = [
   { id: 'relates',  label: 'Relaciona', dash: '' },
-  { id: 'supports', label: 'Sustenta',  dash: '' },
+  { id: 'supports', label: 'Sustenta',  dash: '', support: true },
   { id: 'contrast', label: 'Contrasta', dash: '7 5' },
   { id: 'sequence', label: 'Sequência', dash: '2.5 5' }
 ];
@@ -503,6 +503,280 @@ function wsMoveStrokePoints(stroke, dx, dy) {
   }
 }
 
+const WS_SNAP_GRID = 26;
+
+const WS_NOTE_FONTS = [
+  { id: 'inter',     label: 'Inter',     family: "'Inter', system-ui, sans-serif" },
+  { id: 'dmsans',    label: 'DM Sans',   family: "'DM Sans', system-ui, sans-serif" },
+  { id: 'outfit',    label: 'Outfit',    family: "'Outfit', system-ui, sans-serif" },
+  { id: 'space',     label: 'Space',     family: "'Space Grotesk', system-ui, sans-serif" },
+  { id: 'playfair',  label: 'Playfair',  family: "'Playfair Display', serif" },
+  { id: 'fraunces',  label: 'Fraunces',  family: "'Fraunces', serif" },
+  { id: 'jetbrains', label: 'Mono',      family: "'JetBrains Mono', monospace" },
+  { id: 'chakra',    label: 'Chakra',    family: "'Chakra Petch', sans-serif" }
+];
+
+const WS_NOTE_SIZES = [12, 14, 16, 18, 22];
+const WS_NOTE_ALIGNS = ['left', 'center', 'right', 'justify'];
+const WS_NOTE_BULLETS = ['disc', 'dash', 'arrow', 'decimal'];
+
+function wsNormalizeNoteFont(id) {
+  const s = String(id || 'inter');
+  return WS_NOTE_FONTS.some(f => f.id === s) ? s : 'inter';
+}
+
+function wsNoteFontFamily(id) {
+  const f = WS_NOTE_FONTS.find(x => x.id === id);
+  return f ? f.family : "var(--font-ui)";
+}
+
+function wsNormalizeNoteSize(val) {
+  const n = Number(val);
+  if (!Number.isFinite(n)) return 14;
+  return Math.min(28, Math.max(11, Math.round(n)));
+}
+
+function wsNormalizeNoteAlign(val) {
+  const s = String(val || 'left').toLowerCase();
+  return WS_NOTE_ALIGNS.includes(s) ? s : 'left';
+}
+
+function wsEscapeHtmlText(str) {
+  return String(str == null ? '' : str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function wsPlainTextToNoteHtml(text) {
+  const norm = String(text == null ? '' : text).replace(/\r\n?/g, '\n');
+  if (!norm) return '';
+  const lines = norm.split('\n');
+  return lines.map(line => (line ? '<div>' + wsEscapeHtmlText(line) + '</div>' : '<div><br></div>')).join('');
+}
+
+function wsSanitizeNoteHtml(html) {
+  let s = String(html == null ? '' : html);
+  if (!s.trim()) return '';
+  s = s
+    .replace(/<\s*(script|style|iframe|object|embed|svg|math|link|meta|base)[^>]*>[\s\S]*?<\/\s*\1\s*>/gi, '')
+    .replace(/<\s*(script|style|iframe|object|embed|svg|math|link|meta|base)[^>]*\/?>/gi, '');
+
+  const allowedTags = new Set(['b', 'strong', 'i', 'em', 'u', 's', 'strike', 'del', 'ul', 'ol', 'li', 'p', 'div', 'br', 'span']);
+  const tagMap = { strong: 'b', em: 'i', strike: 's', del: 's' };
+
+  return s.replace(/<(\/?)([a-z0-9-]+)([^>]*)>/gi, (full, slash, rawTag, rawAttrs) => {
+    const lc = rawTag.toLowerCase();
+    if (!allowedTags.has(lc)) return '';
+    const tag = tagMap[lc] || lc;
+    if (slash) return '</' + tag + '>';
+    if (tag === 'br') return '<br>';
+
+    let outAttrs = '';
+    if (tag === 'ul') {
+      const bm = /data-bullet\s*=\s*(['"]?)(disc|dash|arrow)\1/i.exec(rawAttrs || '');
+      if (bm) outAttrs += ' data-bullet="' + bm[2].toLowerCase() + '"';
+    }
+    if (tag === 'div' || tag === 'p' || tag === 'li' || tag === 'span') {
+      const sm = /style\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(rawAttrs || '');
+      if (sm) {
+        const styleStr = sm[1] != null ? sm[1] : sm[2];
+        const alignM = /text-align\s*:\s*(left|center|right|justify)/i.exec(styleStr || '');
+        if (alignM) outAttrs += ' style="text-align:' + alignM[1].toLowerCase() + '"';
+      }
+    }
+    return '<' + tag + outAttrs + '>';
+  }).slice(0, 40000);
+}
+
+function wsNoteHtmlToPlainText(html) {
+  const s = String(html == null ? '' : html);
+  if (!s) return '';
+  return s
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(div|p|li|ul|ol)>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&amp;/gi, '&')
+    .replace(/\n{3,}/g, '\n\n')
+    .trimEnd();
+}
+
+function wsShouldWheelScrollNote(metrics) {
+  if (!metrics) return false;
+  const sh = Number(metrics.scrollHeight) || 0;
+  const ch = Number(metrics.clientHeight) || 0;
+  return sh > ch + 2;
+}
+
+function wsComputeSnap(movingBox, otherBoxes, opts) {
+  opts = opts || {};
+  const gridSize = Math.max(8, Number(opts.gridSize) || WS_SNAP_GRID);
+  const gap = Number(opts.gap != null ? opts.gap : gridSize);
+  const snapDist = Number(opts.snapDist != null ? opts.snapDist : 7);
+  const elemSnapDist = Number(opts.elemSnapDist != null ? opts.elemSnapDist : 12);
+  const pullDist = Number(opts.pullDist != null ? opts.pullDist : 28);
+  const revealDist = Number(opts.revealDist != null ? opts.revealDist : 54);
+  const nearRadius = Number(opts.nearRadius != null ? opts.nearRadius : 220);
+  const guideMaxGap = Number(opts.guideMaxGap != null ? opts.guideMaxGap : 150);
+
+  const rx = Number(movingBox && movingBox.x) || 0;
+  const ry = Number(movingBox && movingBox.y) || 0;
+  const rw = Math.max(1, Number(movingBox && movingBox.w) || 1);
+  const rh = Math.max(1, Number(movingBox && movingBox.h) || 1);
+  const others = Array.isArray(otherBoxes) ? otherBoxes : [];
+
+  let nearestBoxDist = Infinity;
+  const enrichedOthers = [];
+  for (let i = 0; i < others.length; i++) {
+    const o = others[i];
+    if (!o) continue;
+    const ox = Number(o.x) || 0;
+    const oy = Number(o.y) || 0;
+    const ow = Math.max(1, Number(o.w) || 1);
+    const oh = Math.max(1, Number(o.h) || 1);
+    const gapX = Math.max(0, ox - (rx + rw), rx - (ox + ow));
+    const gapY = Math.max(0, oy - (ry + rh), ry - (oy + oh));
+    const boxDist = Math.hypot(gapX, gapY);
+    if (boxDist < nearestBoxDist) nearestBoxDist = boxDist;
+    enrichedOthers.push({ x: ox, y: oy, w: ow, h: oh, gapX, gapY, boxDist });
+  }
+
+  let proximity = 0;
+  if (nearestBoxDist < nearRadius) {
+    const pt = Math.max(0, Math.min(1, 1 - nearestBoxDist / nearRadius));
+    proximity = pt * pt * (3 - 2 * pt);
+  }
+
+  const evalAxis = (rawVal, size, axis) => {
+    const gridTarget = Math.round(rawVal / gridSize) * gridSize;
+    const gridDist = Math.abs(rawVal - gridTarget);
+    let bestElem = null;
+
+    for (let i = 0; i < enrichedOthers.length; i++) {
+      const o = enrichedOthers[i];
+      if (o.boxDist > nearRadius) continue;
+      const crossGap = axis === 'x' ? o.gapY : o.gapX;
+      if (crossGap > guideMaxGap) continue;
+
+      const ox = o.x;
+      const oy = o.y;
+      const ow = o.w;
+      const oh = o.h;
+      const pos = axis === 'x' ? ox : oy;
+      const len = axis === 'x' ? ow : oh;
+      const crossStart = axis === 'x' ? Math.min(ry, oy) : Math.min(rx, ox);
+      const crossEnd = axis === 'x' ? Math.max(ry + rh, oy + oh) : Math.max(rx + rw, ox + ow);
+      const crossProx = Math.max(0, Math.min(1, 1 - crossGap / guideMaxGap));
+
+      const cands = [
+        { val: pos, guide: pos },
+        { val: pos + len - size, guide: pos + len },
+        { val: pos + len / 2 - size / 2, guide: pos + len / 2 },
+        { val: pos + len + gap, guide: pos + len + gap },
+        { val: pos - gap - size, guide: pos - gap }
+      ];
+      for (let j = 0; j < cands.length; j++) {
+        const dist = Math.abs(rawVal - cands[j].val);
+        if (dist <= revealDist && (!bestElem || dist < bestElem.dist)) {
+          bestElem = {
+            target: cands[j].val,
+            guide: cands[j].guide,
+            dist,
+            min: crossStart - 10,
+            max: crossEnd + 10,
+            crossProx
+          };
+        }
+      }
+    }
+
+    let chosenTarget = gridTarget;
+    let chosenDist = gridDist;
+    let threshold = snapDist;
+    let guide = null;
+    let source = 'grid';
+
+    if (bestElem && (bestElem.dist <= elemSnapDist || bestElem.dist <= gridDist + 2)) {
+      chosenTarget = bestElem.target;
+      chosenDist = bestElem.dist;
+      threshold = elemSnapDist;
+      guide = {
+        pos: bestElem.guide,
+        min: bestElem.min,
+        max: bestElem.max,
+        crossProx: bestElem.crossProx
+      };
+      source = 'element';
+    }
+
+    let out = rawVal;
+    let snapped = false;
+    let strength = 0;
+    if (chosenDist <= threshold) {
+      out = chosenTarget;
+      snapped = true;
+      strength = 1;
+    } else if (chosenDist <= pullDist) {
+      const t = (pullDist - chosenDist) / Math.max(1, pullDist - threshold);
+      const pull = 0.28 * t * t;
+      out = rawVal + (chosenTarget - rawVal) * pull;
+      strength = 0.3 + 0.65 * t;
+    } else if (chosenDist <= revealDist) {
+      const t = (revealDist - chosenDist) / Math.max(1, revealDist - pullDist);
+      strength = 0.3 * t;
+    }
+
+    if (guide) {
+      guide.strength = strength * (0.28 + 0.72 * guide.crossProx);
+    }
+
+    return {
+      val: out,
+      target: chosenTarget,
+      dist: chosenDist,
+      snapped,
+      strength,
+      source,
+      guide
+    };
+  };
+
+  const ax = evalAxis(rx, rw, 'x');
+  const ay = evalAxis(ry, rh, 'y');
+  const radialDist = Math.hypot(rx - ax.target, ry - ay.target);
+  const radialNear = Math.max(0, Math.min(1, 1 - radialDist / (revealDist * 1.15)));
+  const moldStrength = Math.max(radialNear * radialNear, (ax.strength + ay.strength) * 0.5);
+  const gridOpacity = 0.38 + 0.62 * proximity;
+  const locked = !!((ax.snapped && ay.snapped) || (ax.snapped && ax.source === 'element') || (ay.snapped && ay.source === 'element'));
+
+  return {
+    x: ax.val,
+    y: ay.val,
+    targetX: ax.target,
+    targetY: ay.target,
+    snappedX: ax.snapped,
+    snappedY: ay.snapped,
+    locked,
+    strengthX: ax.strength,
+    strengthY: ay.strength,
+    proximity,
+    nearestDist: nearestBoxDist,
+    gridOpacity,
+    moldStrength,
+    near: (ax.snapped && ay.snapped) || moldStrength > 0.58,
+    guideX: ax.guide ? Object.assign({ snapped: ax.snapped }, ax.guide) : null,
+    guideY: ay.guide ? Object.assign({ snapped: ay.snapped }, ay.guide) : null
+  };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     WS_CARD_TYPES,
@@ -510,6 +784,11 @@ if (typeof module !== 'undefined' && module.exports) {
     WS_ARROW_KINDS,
     WS_ARROW_DIRS,
     WS_ARROW_COLORS,
+    WS_SNAP_GRID,
+    WS_NOTE_FONTS,
+    WS_NOTE_SIZES,
+    WS_NOTE_ALIGNS,
+    WS_NOTE_BULLETS,
     wsNormalizeText,
     wsNormalizeTags,
     wsFormatTagsLine,
@@ -527,6 +806,15 @@ if (typeof module !== 'undefined' && module.exports) {
     wsStrokeBounds,
     wsStrokesBounds,
     wsFindItemsInBox,
-    wsMoveStrokePoints
+    wsMoveStrokePoints,
+    wsNormalizeNoteFont,
+    wsNoteFontFamily,
+    wsNormalizeNoteSize,
+    wsNormalizeNoteAlign,
+    wsPlainTextToNoteHtml,
+    wsSanitizeNoteHtml,
+    wsNoteHtmlToPlainText,
+    wsShouldWheelScrollNote,
+    wsComputeSnap
   };
 }

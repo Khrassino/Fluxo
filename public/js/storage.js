@@ -29,8 +29,14 @@ const Store = {
         timeout: 60                  // segundos sem atividade | 0 = desligado
       },
       music: {
-        track: 'none',               // none | rain | ocean | pad | lofi | fireplace | night | custom
-        volume: 0.35
+        track: 'none',               // none | flowers | march | rain | ocean | pad | fireplace | night | typing | writing | custom
+        volume: 0.35,
+        dynamicTheme: true,          // aplica paleta da capa enquanto toca
+        visualEffects: true,         // animações visuais da música
+        sceneElements: true,         // ramos/flores (Flowers) e cercas de trincheira (March)
+        sceneParticles: true,        // pétalas / partículas de fogo
+        sceneInteractive: true,      // interação com o mouse
+        sceneIntensity: 65           // 0-100
       },
       motion: {
         enabled: true,
@@ -43,9 +49,9 @@ const Store = {
       },
       particles: {
         enabled: true,
-        style: 'dust',               // dust | rain (gotas) | waves (ondas) | wet | snow
+        style: 'dust',               // dust | rain (gotas) | waves (ondas) | wet | snow | keys
         amount: 55,                  // 0-100
-        interactive: true            // reage ao mouse
+        interactive: true            // reage ao mouse e teclado
       },
       timer: {
         tab: 'countdown',            // countdown | stopwatch
@@ -217,9 +223,26 @@ const Store = {
       if (this.state.particles && aliases[this.state.particles.style]) {
         this.state.particles.style = aliases[this.state.particles.style];
       }
-      const validStyles = ['dust', 'rain', 'waves', 'wet', 'snow'];
+      const validStyles = ['dust', 'rain', 'waves', 'wet', 'snow', 'keys'];
       if (this.state.particles && !validStyles.includes(this.state.particles.style)) {
         this.state.particles.style = 'dust';
+      }
+      if (!this.state.music || typeof this.state.music !== 'object') {
+        this.state.music = Object.assign({}, base.music);
+      } else {
+        if (this.state.music.track === 'lofi') {
+          this.state.music.track = 'none';
+          migrated = true;
+        }
+        this.state.music.dynamicTheme = this.state.music.dynamicTheme !== false;
+        this.state.music.visualEffects = this.state.music.visualEffects !== false;
+        this.state.music.sceneElements = this.state.music.sceneElements !== false;
+        this.state.music.sceneParticles = this.state.music.sceneParticles !== false;
+        this.state.music.sceneInteractive = this.state.music.sceneInteractive !== false;
+        const scInt = Number(this.state.music.sceneIntensity);
+        this.state.music.sceneIntensity = Number.isFinite(scInt) ? clamp(Math.round(scInt), 0, 100) : 65;
+        const vol = Number(this.state.music.volume);
+        this.state.music.volume = Number.isFinite(vol) ? clamp(vol, 0, 1) : 0.35;
       }
       if (!this.state.effects || !['full', 'reduced', 'off'].includes(this.state.effects.level)) {
         this.state.effects = { level: 'full' };
