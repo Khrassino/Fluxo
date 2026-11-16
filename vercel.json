@@ -1,0 +1,7 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "echo 'sem dependências: app estático'",
+  "buildCommand": "rm -rf dist && mkdir dist && cp index.html favicon.ico dist/ && cp -R public/. dist/",
+  "outputDirectory": "dist"
+}
