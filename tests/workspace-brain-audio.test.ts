@@ -471,6 +471,30 @@ test('ws-brain computes organic multi-lane arrow curves, custom end caps, bg pat
   assert.equal(out.edgeSnap.w, 260);
 });
 
+test('default language is English for new and legacy states, while an explicit Portuguese choice is kept', () => {
+  const ctx = loadBrainAndAudioContext();
+  const out = JSON.parse(vm.runInContext(`(() => {
+    const res = {};
+    const withSaved = (saved) => {
+      localStorage.getItem = () => (saved === null ? null : JSON.stringify(saved));
+      Store.load();
+      return getLang() + '|' + Store.state.lang;
+    };
+    res.fresh = withSaved(null);
+    res.legacyNoLang = withSaved({ v: 1, appearance: { theme: 'neon' } });
+    res.invalid = withSaved({ v: 1, lang: 'fr' });
+    res.explicitPt = withSaved({ v: 1, lang: 'pt' });
+    res.explicitEn = withSaved({ v: 1, lang: 'en' });
+    return JSON.stringify(res);
+  })()`, ctx));
+
+  assert.equal(out.fresh, 'en|en');
+  assert.equal(out.legacyNoLang, 'en|en');
+  assert.equal(out.invalid, 'en|en');
+  assert.equal(out.explicitPt, 'pt|pt');
+  assert.equal(out.explicitEn, 'en|en');
+});
+
 test('i18n supports switching to English across workspace, arrow caps, bg patterns, and audio tracks', () => {
   const ctx = loadBrainAndAudioContext();
   const out = JSON.parse(vm.runInContext(`(() => {

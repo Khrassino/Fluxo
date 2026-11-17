@@ -1971,7 +1971,7 @@ const I18N_DICT = {
 
 function getLang() {
   const saved = typeof Store !== 'undefined' && Store.state ? Store.state.lang : null;
-  return saved === 'en' ? 'en' : 'pt';
+  return saved === 'pt' ? 'pt' : 'en';
 }
 
 function appLocale(lang) {

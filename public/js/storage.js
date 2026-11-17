@@ -8,7 +8,7 @@ const Store = {
   defaults() {
     return {
       v: 1,
-      lang: 'pt',
+      lang: 'en',                    // en | pt  (padrão: inglês; quem escolheu 'pt' mantém)
       route: 'home',
       appearance: {
         theme: 'aurora',
@@ -248,7 +248,7 @@ const Store = {
       if (!this.state.effects || !['full', 'reduced', 'off'].includes(this.state.effects.level)) {
         this.state.effects = { level: 'full' };
       }
-      this.state.lang = this.state.lang === 'en' ? 'en' : 'pt';
+      this.state.lang = this.state.lang === 'pt' ? 'pt' : 'en';
       if (!Number.isFinite(+this.state.tracker.heatCell)) this.state.tracker.heatCell = 18;
       this.state.tracker.heatCell = clamp(+this.state.tracker.heatCell, 10, 34);
       // ids antigos dos gráficos continuam válidos
