@@ -31,6 +31,51 @@ function pGroup(dimmed) {
   const g = el('div', 'ctl-group' + (dimmed ? ' is-dimmed' : ''));
   return g;
 }
+function lockGroup(group, locked, reason) {
+  if (!group) return group;
+  const isLocked = !!locked;
+  if (group.classList && typeof group.classList.toggle === 'function') {
+    group.classList.toggle('is-dimmed', isLocked);
+  }
+  const walk = (node) => {
+    if (!node || !Array.isArray(node.children)) return;
+    for (let i = 0; i < node.children.length; i++) {
+      const child = node.children[i];
+      if (!child) continue;
+      const tag = String(child.tagName || '').toUpperCase();
+      if (tag === 'BUTTON' || tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') {
+        if (isLocked) {
+          child.disabled = true;
+          child.tabIndex = -1;
+          if (typeof child.setAttribute === 'function') child.setAttribute('aria-disabled', 'true');
+        } else {
+          if (!(child.dataset && child.dataset.keepDisabled === '1')) {
+            child.disabled = false;
+            child.tabIndex = 0;
+            if (typeof child.removeAttribute === 'function') child.removeAttribute('aria-disabled');
+          }
+        }
+        if (child.classList && child.classList.contains('switch')) {
+          child.classList.toggle('is-disabled', isLocked);
+        }
+      }
+      if (child.classList && child.classList.contains('switch-row')) {
+        child.classList.toggle('is-dimmed', isLocked);
+      }
+      walk(child);
+    }
+  };
+  walk(group);
+  if (typeof group.querySelectorAll === 'function') {
+    Array.from(group.querySelectorAll('.panel-lock-note')).forEach(n => {
+      if (n && typeof n.remove === 'function') n.remove();
+    });
+  }
+  if (isLocked && reason) {
+    group.append(el('p', 'panel-lock-note', reason));
+  }
+  return group;
+}
 function actionRow(buttons) {
   const row = el('div', 'panel-actions');
   buttons.forEach(b => row.append(b));
@@ -47,7 +92,16 @@ function chipGroup(options, active, onPick) {
     else b.textContent = o.label;
     if (o.cls) b.classList.add(o.cls);
     if (o.style) Object.assign(b.style, o.style);
-    b.addEventListener('click', () => onPick(o.id));
+    if (o.disabled) {
+      b.disabled = true;
+      b.tabIndex = -1;
+      b.setAttribute('aria-disabled', 'true');
+      b.dataset.keepDisabled = '1';
+    }
+    b.addEventListener('click', () => {
+      if (b.disabled) return;
+      onPick(o.id);
+    });
     grid.append(b);
   });
   return grid;
@@ -65,6 +119,7 @@ function sliderRow(label, min, max, value, fmt, onInput, step) {
   input.value = value;
   input.setAttribute('aria-label', label);
   input.addEventListener('input', () => {
+    if (input.disabled) return;
     b.textContent = fmt(+input.value);
     onInput(+input.value);
   });
@@ -73,18 +128,27 @@ function sliderRow(label, min, max, value, fmt, onInput, step) {
 }
 function switchRow(label, checked, onChange, opts) {
   const locked = !!(opts && opts.locked);
-  const row = el('div', 'switch-row', '<span>' + label + '</span>');
+  const isDisabled = !!(opts && opts.disabled);
+  const isDimmed = isDisabled || !!(opts && opts.dimmed);
+  const row = el('div', 'switch-row' + (isDimmed ? ' is-dimmed' : ''), '<span>' + label + '</span>');
   if (locked) {
-    const tag = el('span', 'switch-locked', (opts && opts.lockedText) || 'Sempre visível');
+    const tag = el('span', 'switch-locked', (opts && opts.lockedText) || tr('panel.alwaysVisible', 'Sempre visível'));
     row.append(tag);
     return row;
   }
-  const sw = el('button', 'switch' + (checked ? ' on' : ''));
+  const sw = el('button', 'switch' + (checked ? ' on' : '') + (isDisabled ? ' is-disabled' : ''));
   sw.type = 'button';
   sw.setAttribute('role', 'switch');
   sw.setAttribute('aria-checked', checked ? 'true' : 'false');
   sw.setAttribute('aria-label', label);
+  if (isDisabled) {
+    sw.disabled = true;
+    sw.tabIndex = -1;
+    sw.setAttribute('aria-disabled', 'true');
+    sw.dataset.keepDisabled = '1';
+  }
   sw.addEventListener('click', () => {
+    if (sw.disabled) return;
     const on = !sw.classList.contains('on');
     sw.classList.toggle('on', on);
     sw.setAttribute('aria-checked', on ? 'true' : 'false');
@@ -144,13 +208,13 @@ function accentColorControl(label, currentValue, onChange) {
   const ctl = pCtl('<span>' + label + '</span>');
   const grid = el('div', 'accent-grid');
 
-  const themeBtn = el('button', 'chip' + (!val ? ' active' : ''), 'Cor do tema');
+  const themeBtn = el('button', 'chip' + (!val ? ' active' : ''), tr('panel.themeColor', 'Cor do tema'));
   themeBtn.type = 'button';
   themeBtn.setAttribute('aria-pressed', !val ? 'true' : 'false');
 
   const dots = [];
   const customWrap = el('label', 'accent-custom' + (isCustom ? ' active' : ''));
-  customWrap.title = 'Cor personalizada';
+  customWrap.title = tr('panel.customColor', 'Cor personalizada');
 
   const syncActive = (nextVal) => {
     const norm = (nextVal || '').trim().toLowerCase();
@@ -190,8 +254,8 @@ function accentColorControl(label, currentValue, onChange) {
   const picker = el('input');
   picker.type = 'color';
   picker.value = val || '#8fa2ff';
-  picker.title = 'Cor personalizada';
-  picker.setAttribute('aria-label', label + ' personalizada');
+  picker.title = tr('panel.customColor', 'Cor personalizada');
+  picker.setAttribute('aria-label', label + ' · ' + tr('panel.customColor', 'Cor personalizada'));
   picker.addEventListener('input', () => {
     syncActive(picker.value);
     onChange(picker.value);
@@ -222,7 +286,9 @@ const Panel = {
 
   init() {
     $('#panel-close').innerHTML = svgIcon('close');
-    $('#panel-close').setAttribute('aria-label', 'Fechar personalização');
+    const closeLabel = tr('panel.close', 'Fechar personalização');
+    $('#panel-close').title = closeLabel;
+    $('#panel-close').setAttribute('aria-label', closeLabel);
     $('#panel-close').addEventListener('click', () => this.close());
     $('#panel-backdrop').addEventListener('click', () => this.close());
     document.addEventListener('keydown', (e) => {
@@ -283,11 +349,18 @@ const Panel = {
     const scroll = body.scrollTop;
     body.innerHTML = '';
 
+    const groupKeyMap = {
+      'Aparência': 'panel.group.appearance',
+      'Páginas': 'panel.group.pages',
+      'Sistema': 'panel.group.system'
+    };
+
     let lastGroup = null;
     PANEL_DRAWERS.forEach((d, idx) => {
       if (d.group !== lastGroup) {
         lastGroup = d.group;
-        body.append(el('div', 'panel-group-label', d.group));
+        const gLabel = tr(groupKeyMap[d.group] || d.group, d.group);
+        body.append(el('div', 'panel-group-label', gLabel));
       }
       const next = PANEL_DRAWERS[idx + 1];
       const isGroupLast = !next || next.group !== d.group;
@@ -295,12 +368,13 @@ const Panel = {
       const drawer = el('section', 'panel-drawer' + (open ? ' open' : '') + (isGroupLast ? ' group-last' : ''));
       drawer.dataset.drawer = d.id;
 
+      const dLabel = tr('panel.drawer.' + d.id, d.label);
       const head = el('button', 'drawer-head');
       head.type = 'button';
       head.setAttribute('aria-expanded', open ? 'true' : 'false');
       head.innerHTML =
         '<span class="drawer-icon">' + svgIcon(d.icon) + '</span>' +
-        '<span class="drawer-title">' + d.label + '</span>' +
+        '<span class="drawer-title">' + dLabel + '</span>' +
         '<span class="drawer-chev">' + svgIcon('chevD') + '</span>';
       head.addEventListener('click', () => this.toggleDrawer(d.id));
 
@@ -318,33 +392,49 @@ const Panel = {
   /* ================= 1. temas e cores ================= */
   themesSection() {
     const a = Store.state.appearance;
-    const sec = pSection('palette', 'Temas e cores');
+    const sec = pSection('palette', tr('panel.drawer.themes', 'Temas e cores'));
+    const activeMusic = typeof Themes !== 'undefined' && typeof Themes.activeMusicTheme === 'function'
+      ? Themes.activeMusicTheme() : null;
+    const musicLocked = !!activeMusic;
+    const trackTitle = activeMusic && activeMusic.meta ? activeMusic.meta.title : (activeMusic ? activeMusic.id : '');
 
-    sec.append(pSub('Tema'));
+    if (musicLocked) {
+      const hint = el('div', 'panel-hint-box', '<span>' + tr('panel.lock.musicThemeOn', 'Bloqueado enquanto o tema automático da música "{track}" estiver ativo.', { track: trackTitle }) + '</span>');
+      const goBtn = el('button', 'panel-hint-link', tr('panel.lock.openMusic', 'Abrir música'));
+      goBtn.type = 'button';
+      goBtn.addEventListener('click', () => this.openDrawer('music'));
+      hint.append(goBtn);
+      sec.append(hint);
+    }
+
+    const themeLockGroup = pGroup(musicLocked);
+    themeLockGroup.append(pSub(tr('panel.themes.sub', 'Tema')));
     const themeCtl = pCtl();
     const tGrid = el('div', 'theme-grid');
-    THEMES.forEach(t => {
-      const active = t.id === a.theme;
+    THEMES.forEach(item => {
+      const label = typeof getThemeLabel === 'function' ? getThemeLabel(item.id) : item.label;
+      const active = item.id === a.theme;
       const b = el('button', 'theme-card' + (active ? ' active' : ''));
       b.type = 'button';
-      b.dataset.theme = t.id;
-      b.title = t.label;
+      b.dataset.theme = item.id;
+      b.title = label;
       b.setAttribute('aria-pressed', active ? 'true' : 'false');
-      const customTheme = t.id === 'custom';
-      const bg = customTheme ? (a.custom.bg || t.bg) : t.bg;
-      const accent = customTheme ? (a.custom.accent || t.accent) : t.accent;
-      const accent2 = customTheme ? (a.custom.accent2 || t.accent2) : t.accent2;
-      const ink = customTheme ? (a.custom.text || t.ink) : t.ink;
+      const customTheme = item.id === 'custom';
+      const bg = customTheme ? (a.custom.bg || item.bg) : item.bg;
+      const accent = customTheme ? (a.custom.accent || item.accent) : item.accent;
+      const accent2 = customTheme ? (a.custom.accent2 || item.accent2) : item.accent2;
+      const ink = customTheme ? (a.custom.text || item.ink) : item.ink;
       b.style.setProperty('--tc-bg', bg);
       b.style.setProperty('--tc-accent', accent);
       b.style.setProperty('--tc-accent2', accent2);
       b.style.setProperty('--tc-ink', ink);
       b.innerHTML =
-        '<span class="theme-glyph">' + svgIcon(t.icon || 'palette') + '</span>' +
+        '<span class="theme-glyph">' + svgIcon(item.icon || 'palette') + '</span>' +
         '<span class="theme-dots"><i></i><i></i></span>' +
-        '<span class="theme-name">' + t.label + '</span>';
+        '<span class="theme-name">' + label + '</span>';
       b.addEventListener('click', () => {
-        Store.state.appearance.theme = t.id;
+        if (b.disabled) return;
+        Store.state.appearance.theme = item.id;
         Themes.apply();
         Store.save();
         this.render();
@@ -352,10 +442,10 @@ const Panel = {
       tGrid.append(b);
     });
     themeCtl.append(tGrid);
-    sec.append(themeCtl);
+    themeLockGroup.append(themeCtl);
 
     if (a.theme === 'custom') {
-      sec.append(pSub('Cores do tema personalizado'));
+      themeLockGroup.append(pSub(tr('panel.themes.customSub', 'Cores do tema personalizado')));
       const c = a.custom || {};
       const grid = el('div', 'custom-colors');
       const set = (key, val) => {
@@ -363,49 +453,68 @@ const Panel = {
         Themes.apply();
         Store.save();
       };
-      grid.append(colorField('Fundo', c.bg || '#0a0e1e', v => set('bg', v)));
-      grid.append(colorField('Destaque', c.accent || '#8fa2ff', v => set('accent', v)));
-      grid.append(colorField('Destaque 2', c.accent2 || '#5fe3c4', v => set('accent2', v)));
-      grid.append(colorField('Texto', c.text || '#edf1ff', v => set('text', v)));
-      sec.append(grid);
+      grid.append(colorField(tr('panel.themes.bg', 'Fundo'), c.bg || '#0a0e1e', v => set('bg', v)));
+      grid.append(colorField(tr('panel.themes.accent', 'Destaque'), c.accent || '#8fa2ff', v => set('accent', v)));
+      grid.append(colorField(tr('panel.themes.accent2', 'Destaque 2'), c.accent2 || '#5fe3c4', v => set('accent2', v)));
+      grid.append(colorField(tr('panel.themes.text', 'Texto'), c.text || '#edf1ff', v => set('text', v)));
+      themeLockGroup.append(grid);
 
-      sec.append(sliderRow('Vidro (opacidade)', 0, 100, c.glass == null ? 55 : c.glass, v => v + '%', v => {
+      themeLockGroup.append(sliderRow(tr('panel.themes.glass', 'Vidro (opacidade)'), 0, 100, c.glass == null ? 55 : c.glass, v => v + '%', v => {
         Store.state.appearance.custom.glass = v;
         Themes.apply();
         Store.save();
       }));
 
-      const reset = el('button', 'chip', svgIcon('reset') + '<span>Restaurar padrão</span>');
+      const reset = el('button', 'chip', svgIcon('reset') + '<span>' + tr('panel.restoreDefault', 'Restaurar padrão') + '</span>');
       reset.type = 'button';
       reset.addEventListener('click', () => {
+        if (reset.disabled) return;
         Store.state.appearance.custom = Store.defaults().appearance.custom;
         Themes.apply();
         Store.save();
         this.render();
       });
-      sec.append(actionRow([reset]));
+      themeLockGroup.append(actionRow([reset]));
     }
 
+    lockGroup(themeLockGroup, musicLocked);
+    sec.append(themeLockGroup);
     return sec;
   },
 
   /* ================= 2. papel de parede e fonte ================= */
   appearanceSection() {
     const a = Store.state.appearance;
-    const sec = pSection('image', 'Papel de parede e fonte');
+    const sec = pSection('image', tr('panel.drawer.appearance', 'Papel de parede e fonte'));
+    const activeMusic = typeof Themes !== 'undefined' && typeof Themes.activeMusicTheme === 'function'
+      ? Themes.activeMusicTheme() : null;
+    const musicLocked = !!activeMusic;
+    const trackTitle = activeMusic && activeMusic.meta ? activeMusic.meta.title : (activeMusic ? activeMusic.id : '');
 
-    sec.append(pSub('Papel de parede'));
+    if (musicLocked) {
+      const hint = el('div', 'panel-hint-box', '<span>' + tr('panel.lock.musicThemeOn', 'Bloqueado enquanto o tema automático da música "{track}" estiver ativo.', { track: trackTitle }) + '</span>');
+      const goBtn = el('button', 'panel-hint-link', tr('panel.lock.openMusic', 'Abrir música'));
+      goBtn.type = 'button';
+      goBtn.addEventListener('click', () => this.openDrawer('music'));
+      hint.append(goBtn);
+      sec.append(hint);
+    }
+
+    const wpGroup = pGroup(musicLocked);
+    wpGroup.append(pSub(tr('panel.app.wallpaper', 'Papel de parede')));
     const wpCtl = pCtl();
     const wGrid = el('div', 'wall-grid');
     WALLPAPERS.forEach(w => {
+      const label = typeof getWallpaperLabel === 'function' ? getWallpaperLabel(w.id) : w.label;
       const active = w.id === a.wallpaper;
       const b = el('button', 'wall-card' + (active ? ' active' : ''));
       b.type = 'button';
       b.style.background = w.id === 'nenhum' ? 'var(--bg)' : w.bg;
-      b.title = w.label;
+      b.title = label;
       b.setAttribute('aria-pressed', active ? 'true' : 'false');
-      b.innerHTML = '<span class="wall-name">' + w.label + '</span>';
+      b.innerHTML = '<span class="wall-name">' + label + '</span>';
       b.addEventListener('click', () => {
+        if (b.disabled) return;
         Store.state.appearance.wallpaper = w.id;
         Themes.apply();
         Store.save();
@@ -419,11 +528,13 @@ const Panel = {
     custom.style.background = Themes.customWallpaperUrl
       ? 'url("' + Themes.customWallpaperUrl + '") center/cover'
       : 'var(--surface-2)';
-    custom.title = 'Sua imagem';
+    const yourImg = tr('panel.app.yourImage', 'Sua imagem');
+    custom.title = yourImg;
     custom.setAttribute('aria-pressed', customActive ? 'true' : 'false');
-    custom.innerHTML = '<span class="wall-name">Sua imagem</span>';
+    custom.innerHTML = '<span class="wall-name">' + yourImg + '</span>';
     custom.addEventListener('click', () => {
-      if (!Themes.customWallpaperUrl) { toast('Envie uma imagem primeiro', 'image'); return; }
+      if (custom.disabled) return;
+      if (!Themes.customWallpaperUrl) { toast(tr('panel.app.sendFirst', 'Envie uma imagem primeiro'), 'image'); return; }
       Store.state.appearance.wallpaper = 'custom';
       Themes.apply();
       Store.save();
@@ -432,9 +543,9 @@ const Panel = {
     wGrid.append(custom);
     wpCtl.append(wGrid);
 
-    const wpBtns = [uploadBtn(Themes.customWallpaperUrl ? 'Trocar imagem' : 'Enviar imagem', 'image/*', async (file) => {
-      if (!file.type.startsWith('image/')) { toast('Escolha um arquivo de imagem', 'close'); return; }
-      if (file.size > 8 * 1024 * 1024) { toast('Imagem muito grande (máx. 8 MB)', 'close'); return; }
+    const wpBtns = [uploadBtn(Themes.customWallpaperUrl ? tr('panel.app.changeImage', 'Trocar imagem') : tr('panel.app.sendImage', 'Enviar imagem'), 'image/*', async (file) => {
+      if (!file.type.startsWith('image/')) { toast(tr('panel.app.chooseImageErr', 'Escolha um arquivo de imagem'), 'close'); return; }
+      if (file.size > 8 * 1024 * 1024) { toast(tr('panel.app.imageTooBig', 'Imagem muito grande (máx. 8 MB)'), 'close'); return; }
       try {
         const url = await readFileAsDataURL(file);
         await Files.put('customWallpaper', url);
@@ -443,13 +554,14 @@ const Panel = {
         Store.save();
         Themes.apply();
         this.render();
-        toast('Papel de parede atualizado', 'image');
-      } catch (e) { toast('Não foi possível salvar a imagem', 'close'); }
+        toast(tr('panel.app.imageSaved', 'Papel de parede atualizado'), 'image');
+      } catch (e) { toast(tr('panel.app.imageSaveErr', 'Não foi possível salvar a imagem'), 'close'); }
     })];
     if (Themes.customWallpaperUrl) {
-      const rm = el('button', 'chip', 'Remover imagem');
+      const rm = el('button', 'chip', tr('panel.app.removeImage', 'Remover imagem'));
       rm.type = 'button';
       rm.addEventListener('click', async () => {
+        if (rm.disabled) return;
         await Files.del('customWallpaper');
         Themes.customWallpaperUrl = null;
         if (Store.state.appearance.wallpaper === 'custom') Store.state.appearance.wallpaper = 'aurora';
@@ -460,10 +572,12 @@ const Panel = {
       wpBtns.push(rm);
     }
     wpCtl.append(actionRow(wpBtns));
-    sec.append(wpCtl);
+    wpGroup.append(wpCtl);
+    lockGroup(wpGroup, musicLocked);
+    sec.append(wpGroup);
 
-    sec.append(pSub('Tipografia da interface'));
-    const fontCtl = pCtl('<span>Fonte</span>');
+    sec.append(pSub(tr('panel.app.uiFontSub', 'Tipografia da interface')));
+    const fontCtl = pCtl('<span>' + tr('panel.app.font', 'Fonte') + '</span>');
     Themes.ensureFonts(UI_FONTS.map(f => f.id));
     fontCtl.append(chipGroup(
       UI_FONTS.map(f => ({ id: f.id, label: f.label, cls: 'font-chip', style: { fontFamily: f.family } })),
@@ -483,16 +597,21 @@ const Panel = {
   effectsSection() {
     const m = Store.state.motion;
     const p = Store.state.particles;
+    const mu = Store.state.music || {};
     const fx = Store.state.effects || (Store.state.effects = { level: 'full' });
     const globalOff = fx.level === 'off';
-    const sec = pSection('motion', 'Efeitos');
+    const sec = pSection('motion', tr('panel.drawer.effects', 'Efeitos'));
 
-    sec.append(pSub('Desempenho'));
-    const lvlCtl = pCtl('<span>Nível global de efeitos</span>');
+    const activeThematic = !globalOff && typeof Sound !== 'undefined' && Sound.playing && typeof getThematicTrack === 'function'
+      ? getThematicTrack(mu.track) : null;
+    const musicParticlesLocked = !!(activeThematic && mu.visualEffects !== false && mu.sceneParticles !== false);
+
+    sec.append(pSub(tr('panel.fx.perf', 'Desempenho')));
+    const lvlCtl = pCtl('<span>' + tr('panel.fx.globalLevel', 'Nível global de efeitos') + '</span>');
     lvlCtl.append(chipGroup([
-      { id: 'full',    label: 'Completos' },
-      { id: 'reduced', label: 'Reduzidos' },
-      { id: 'off',     label: 'Desligados' }
+      { id: 'full',    label: tr('panel.fx.full', 'Completos') },
+      { id: 'reduced', label: tr('panel.fx.reduced', 'Reduzidos') },
+      { id: 'off',     label: tr('panel.fx.off', 'Desligados') }
     ], fx.level || 'full', (id) => {
       fx.level = id;
       Motion.readState();
@@ -500,65 +619,94 @@ const Panel = {
       this.render();
     }));
     sec.append(lvlCtl);
-    sec.append(el('p', 'panel-note', 'Reduzidos deixam o fundo mais discreto e econômico. Desligados pausam movimento e partículas (a Área de Trabalho já pausa tudo automaticamente).'));
+    sec.append(el('p', 'panel-note', tr('panel.fx.perfNote', 'Reduzidos deixam o fundo mais discreto e econômico. Desligados pausam movimento e partículas (a Área de Trabalho já pausa tudo automaticamente).')));
 
-    sec.append(pSub('Movimento do fundo'));
-    sec.append(switchRow('Movimento ativado', m.enabled, (on) => {
+    sec.append(pSub(tr('panel.fx.motionSub', 'Movimento do fundo')));
+    sec.append(switchRow(tr('panel.fx.motionOn', 'Movimento ativado'), m.enabled, (on) => {
       Store.state.motion.enabled = on;
       Motion.readState();
       Store.save();
       this.render();
-    }));
+    }, { disabled: globalOff }));
+
     const mGroup = pGroup(globalOff || !m.enabled);
-    const mStyleCtl = pCtl('<span>Estilo</span>');
-    mStyleCtl.append(chipGroup(MOTION_MODES, m.mode, (id) => {
-      Store.state.motion.mode = id;
-      Motion.readState();
-      Store.save();
-      this.render();
-    }));
+    const mStyleCtl = pCtl('<span>' + tr('panel.fx.style', 'Estilo') + '</span>');
+    mStyleCtl.append(chipGroup(
+      MOTION_MODES.map(item => ({
+        id: item.id,
+        label: typeof getMotionModeLabel === 'function' ? getMotionModeLabel(item.id) : item.label
+      })),
+      m.mode,
+      (id) => {
+        Store.state.motion.mode = id;
+        Motion.readState();
+        Store.save();
+        this.render();
+      }
+    ));
     mGroup.append(mStyleCtl);
-    mGroup.append(sliderRow('Intensidade', 0, 100, m.intensity, v => v + '%', v => {
+    mGroup.append(sliderRow(tr('panel.fx.intensity', 'Intensidade'), 0, 100, m.intensity, v => v + '%', v => {
       Store.state.motion.intensity = v;
       Motion.readState();
       Store.save();
     }));
-    mGroup.append(sliderRow('Suavidade', 0, 100, m.smoothness, v => v + '%', v => {
+    mGroup.append(sliderRow(tr('panel.fx.smoothness', 'Suavidade'), 0, 100, m.smoothness, v => v + '%', v => {
       Store.state.motion.smoothness = v;
       Motion.readState();
       Store.save();
     }));
+    lockGroup(
+      mGroup,
+      globalOff || !m.enabled,
+      globalOff ? tr('panel.lock.effectsOff', 'Bloqueado porque os efeitos globais estão desligados.') : (!m.enabled ? tr('panel.lock.motionOff', 'Ative o movimento do fundo para ajustar estes controles.') : '')
+    );
     sec.append(mGroup);
-    sec.append(el('p', 'panel-note', 'Todos os estilos reagem ao mouse. Deslizar, Profundidade, Inclinação, Balanço e Deriva mudam como o fundo acompanha o ponteiro.'));
+    sec.append(el('p', 'panel-note', tr('panel.fx.motionNote', 'Todos os estilos reagem ao mouse. Deslizar, Profundidade, Inclinação, Balanço e Deriva mudam como o fundo acompanha o ponteiro.')));
 
-    sec.append(pSub('Partículas'));
-    sec.append(switchRow('Partículas ativadas', p.enabled, (on) => {
+    sec.append(pSub(tr('panel.fx.particlesSub', 'Partículas')));
+    sec.append(switchRow(tr('panel.fx.particlesOn', 'Partículas ativadas'), p.enabled, (on) => {
       Store.state.particles.enabled = on;
       Motion.readState();
       Store.save();
       this.render();
-    }));
-    const pGroupBox = pGroup(globalOff || !p.enabled);
-    const pStyleCtl = pCtl('<span>Estilo</span>');
-    pStyleCtl.append(chipGroup(PARTICLE_STYLES, p.style, (id) => {
-      Store.state.particles.style = id;
-      Motion.readState();
-      Store.save();
-      this.render();
-    }));
+    }, { disabled: globalOff || musicParticlesLocked }));
+
+    const pLocked = globalOff || !p.enabled || musicParticlesLocked;
+    const pReason = globalOff
+      ? tr('panel.lock.effectsOff', 'Bloqueado porque os efeitos globais estão desligados.')
+      : (musicParticlesLocked
+        ? tr('panel.lock.musicParticlesOn', 'Controlado pelas partículas da música "{track}" enquanto ela toca.', { track: activeThematic.title })
+        : (!p.enabled ? tr('panel.lock.particlesOff', 'Ative as partículas para personalizar estilo e densidade.') : ''));
+
+    const pGroupBox = pGroup(pLocked);
+    const pStyleCtl = pCtl('<span>' + tr('panel.fx.style', 'Estilo') + '</span>');
+    pStyleCtl.append(chipGroup(
+      PARTICLE_STYLES.map(item => ({
+        id: item.id,
+        label: typeof getParticleStyleLabel === 'function' ? getParticleStyleLabel(item.id) : item.label
+      })),
+      p.style,
+      (id) => {
+        Store.state.particles.style = id;
+        Motion.readState();
+        Store.save();
+        this.render();
+      }
+    ));
     pGroupBox.append(pStyleCtl);
-    pGroupBox.append(sliderRow('Quantidade', 0, 100, p.amount, v => v + '%', v => {
+    pGroupBox.append(sliderRow(tr('panel.fx.amount', 'Quantidade'), 0, 100, p.amount, v => v + '%', v => {
       Store.state.particles.amount = v;
       Motion.readState();
       Store.save();
     }));
-    pGroupBox.append(switchRow('Interagir com o mouse', p.interactive, (on) => {
+    pGroupBox.append(switchRow(tr('panel.fx.interactive', 'Interagir com o mouse'), p.interactive, (on) => {
       Store.state.particles.interactive = on;
       Motion.readState();
       Store.save();
     }));
+    lockGroup(pGroupBox, pLocked, pReason);
     sec.append(pGroupBox);
-    sec.append(el('p', 'panel-note', 'Chuva cai e desvia de leve do mouse; Onda cria ondas circulares; Poeira flutua; Tela molhada escorre; Neve deriva; Teclas faz teclas subirem e destaca as teclas que você digitar.'));
+    sec.append(el('p', 'panel-note', tr('panel.fx.particlesNote', 'Chuva cai e desvia de leve do mouse; Onda cria ondas circulares; Poeira flutua; Tela molhada escorre; Neve deriva; Teclas faz teclas subirem e destaca as teclas que você digitar.')));
     return sec;
   },
 
@@ -567,29 +715,32 @@ const Panel = {
     const m = Store.state.music || {};
     const fx = Store.state.effects || { level: 'full' };
     const globalOff = fx.level === 'off';
-    const sec = pSection('music', 'Música e atmosfera');
+    const sec = pSection('music', tr('panel.drawer.music', 'Música e atmosfera'));
     const tracks = typeof CUSTOM_THEMATIC_TRACKS !== 'undefined' ? CUSTOM_THEMATIC_TRACKS : [];
 
-    sec.append(pSub('Músicas temáticas', 'Testes'));
-    sec.append(el('p', 'panel-note', 'Cada música temática transforma a paleta do aplicativo conforme a capa e ativa efeitos sutis enquanto toca.'));
+    sec.append(pSub(tr('panel.music.thematicSub', 'Músicas temáticas'), tr('panel.music.testBadge', 'Testes')));
+    sec.append(el('p', 'panel-note', tr('panel.music.thematicNote', 'Experiências visuais completas: cada capa altera a paleta do aplicativo e ativa cenários sutis enquanto toca.')));
 
     const grid = el('div', 'music-cover-grid');
-    tracks.forEach(tr => {
-      const isSelected = m.track === tr.id;
+    tracks.forEach(trMeta => {
+      const isSelected = m.track === trMeta.id;
       const isPlaying = isSelected && typeof Sound !== 'undefined' && Sound.playing;
-      const coverSrc = tr.coverSrc || (typeof buildTrackCoverSvgDataUrl === 'function' ? buildTrackCoverSvgDataUrl(tr.id) : '');
+      const coverSrc = trMeta.coverSrc || (typeof buildTrackCoverSvgDataUrl === 'function' ? buildTrackCoverSvgDataUrl(trMeta.id) : '');
 
       const tile = el('button', 'music-cover-tile' + (isSelected ? ' active' : '') + (isPlaying ? ' playing' : ''));
       tile.type = 'button';
-      tile.dataset.trackId = tr.id;
-      tile.title = isPlaying ? 'Pausar ' + tr.title : 'Tocar ' + tr.title;
-      tile.setAttribute('aria-label', isPlaying ? 'Pausar ' + tr.title : 'Tocar ' + tr.title);
+      tile.dataset.trackId = trMeta.id;
+      const labelTxt = isPlaying
+        ? tr('panel.music.pause', 'Pausar {title}', { title: trMeta.title })
+        : tr('panel.music.play', 'Tocar {title}', { title: trMeta.title });
+      tile.title = labelTxt;
+      tile.setAttribute('aria-label', labelTxt);
       tile.setAttribute('aria-pressed', isPlaying ? 'true' : 'false');
 
       if (coverSrc) {
         const img = el('img');
         img.src = coverSrc;
-        img.alt = 'Capa de ' + tr.title;
+        img.alt = tr('panel.music.coverAlt', 'Capa de {title}', { title: trMeta.title });
         img.loading = 'lazy';
         tile.append(img);
       }
@@ -600,8 +751,8 @@ const Panel = {
       tile.append(overlay);
 
       tile.addEventListener('click', () => {
-        if (Store.state.music.track === tr.id && Sound.playing) Sound.stop();
-        else Sound.play(tr.id);
+        if (Store.state.music.track === trMeta.id && Sound.playing) Sound.stop();
+        else Sound.play(trMeta.id);
         this.render();
       });
 
@@ -609,21 +760,17 @@ const Panel = {
     });
     sec.append(grid);
 
-    sec.append(pSub('Trilhas de estudo e volume'));
+    sec.append(pSub(tr('panel.music.basicSub', 'Trilhas de estudo e ambiente')));
+    sec.append(el('p', 'panel-note', tr('panel.music.basicNote', 'Sons leves e contínuos para leitura, escrita e concentração profunda, sem alterar o tema da página.')));
     const hasCustomAudio = typeof Sound !== 'undefined' && !!Sound.customSrc;
-    const opts = [
-      { id: 'none',      label: 'Sem música' },
-      { id: 'rain',      label: 'Chuva' },
-      { id: 'ocean',     label: 'Oceano' },
-      { id: 'pad',       label: 'Ambiente' },
-      { id: 'fireplace', label: 'Lareira' },
-      { id: 'night',     label: 'Noite calma' },
-      { id: 'typing',    label: 'Teclado' },
-      { id: 'writing',   label: 'Escrita' }
-    ];
-    if (hasCustomAudio) opts.push({ id: 'custom', label: 'Sua música' });
+    const basicIds = ['none', 'typing', 'keys', 'writing', 'rain', 'ocean', 'pad', 'fireplace', 'night'];
+    if (hasCustomAudio) basicIds.push('custom');
+    const opts = basicIds.map(id => ({
+      id,
+      label: typeof getTrackLabel === 'function' ? getTrackLabel(id) : id
+    }));
 
-    const musicCtl = pCtl('<span>Trilha ambiente</span>');
+    const musicCtl = pCtl('<span>' + tr('panel.music.trackLabel', 'Trilha') + '</span>');
     musicCtl.append(chipGroup(opts, m.track || 'none', (id) => {
       Store.state.music.track = id;
       Store.save();
@@ -637,11 +784,11 @@ const Panel = {
     }));
     sec.append(musicCtl);
 
-    sec.append(sliderRow('Volume', 0, 100, Math.round((m.volume == null ? 0.35 : m.volume) * 100), v => v + '%', v => Sound.setVolume(v / 100)));
+    sec.append(sliderRow(tr('panel.music.volume', 'Volume'), 0, 100, Math.round((m.volume == null ? 0.35 : m.volume) * 100), v => v + '%', v => Sound.setVolume(v / 100)));
 
-    const musicBtns = [uploadBtn(hasCustomAudio ? 'Trocar áudio' : 'Enviar áudio', 'audio/*', async (file) => {
-      if (!file.type.startsWith('audio/')) { toast('Escolha um arquivo de áudio', 'close'); return; }
-      if (file.size > 12 * 1024 * 1024) { toast('Áudio muito grande (máx. 12 MB)', 'close'); return; }
+    const musicBtns = [uploadBtn(hasCustomAudio ? tr('panel.music.changeAudio', 'Trocar áudio') : tr('panel.music.sendAudio', 'Enviar áudio'), 'audio/*', async (file) => {
+      if (!file.type.startsWith('audio/')) { toast(tr('panel.music.chooseAudioErr', 'Escolha um arquivo de áudio'), 'close'); return; }
+      if (file.size > 12 * 1024 * 1024) { toast(tr('panel.music.audioTooBig', 'Áudio muito grande (máx. 12 MB)'), 'close'); return; }
       try {
         const url = await readFileAsDataURL(file);
         await Files.put('customMusic', url);
@@ -650,11 +797,11 @@ const Panel = {
         Store.save();
         Sound.play('custom');
         this.render();
-        toast('Áudio carregado', 'music');
-      } catch (e) { toast('Não foi possível salvar o áudio', 'close'); }
+        toast(tr('panel.music.audioSaved', 'Áudio carregado'), 'music');
+      } catch (e) { toast(tr('panel.music.audioSaveErr', 'Não foi possível salvar o áudio'), 'close'); }
     })];
     if (hasCustomAudio) {
-      const rmMusic = el('button', 'chip', 'Remover áudio');
+      const rmMusic = el('button', 'chip', tr('panel.music.removeAudio', 'Remover áudio'));
       rmMusic.type = 'button';
       rmMusic.addEventListener('click', async () => {
         await Files.del('customMusic');
@@ -670,56 +817,68 @@ const Panel = {
         }
         Store.save();
         this.render();
-        toast('Áudio removido', 'trash');
+        toast(tr('panel.music.audioRemoved', 'Áudio removido'), 'trash');
       });
       musicBtns.push(rmMusic);
     }
     sec.append(actionRow(musicBtns));
 
-    sec.append(pSub('Tema e animações da música'));
+    sec.append(pSub(tr('panel.music.animSub', 'Tema e animações da música')));
     if (globalOff) {
-      const hint = el('div', 'panel-hint-box', '<span>Os efeitos globais estão desligados.</span>');
-      const goBtn = el('button', 'panel-hint-link', 'Configurar');
+      const hint = el('div', 'panel-hint-box', '<span>' + tr('panel.music.globalOffBox', 'Os efeitos globais estão desligados.') + '</span>');
+      const goBtn = el('button', 'panel-hint-link', tr('panel.configure', 'Configurar'));
       goBtn.type = 'button';
       goBtn.addEventListener('click', () => this.openDrawer('effects'));
       hint.append(goBtn);
       sec.append(hint);
     }
-    sec.append(switchRow('Aplicar tema da capa enquanto toca', m.dynamicTheme !== false, (on) => {
+    sec.append(switchRow(tr('panel.music.dynamicTheme', 'Aplicar tema da capa enquanto toca'), m.dynamicTheme !== false, (on) => {
       Store.state.music.dynamicTheme = on;
       Store.save();
       Sound.syncVisuals();
     }));
-    sec.append(switchRow('Animações visuais da música', m.visualEffects !== false, (on) => {
+    sec.append(switchRow(tr('panel.music.visualEffects', 'Animações visuais da música'), m.visualEffects !== false, (on) => {
       Store.state.music.visualEffects = on;
       Store.save();
       Sound.syncVisuals();
       this.render();
-    }));
+    }, { disabled: globalOff }));
 
-    const visGroup = pGroup(globalOff || m.visualEffects === false);
-    visGroup.append(switchRow('Elementos no fundo (ramos e cercas)', m.sceneElements !== false, (on) => {
+    const visLocked = globalOff || m.visualEffects === false;
+    const visReason = globalOff
+      ? tr('panel.lock.effectsOff', 'Bloqueado porque os efeitos globais estão desligados.')
+      : (m.visualEffects === false ? tr('panel.lock.musicVisualOff', 'Ative as animações visuais da música para personalizar estes ajustes.') : '');
+
+    const visGroup = pGroup(visLocked);
+    visGroup.append(switchRow(tr('panel.music.sceneElements', 'Elementos no fundo (ramos e cercas)'), m.sceneElements !== false, (on) => {
       Store.state.music.sceneElements = on;
       Store.save();
       Sound.syncVisuals();
+      this.render();
     }));
-    visGroup.append(switchRow('Partículas musicais (pétalas e brasas)', m.sceneParticles !== false, (on) => {
+    visGroup.append(switchRow(tr('panel.music.sceneParticles', 'Partículas musicais (pétalas e brasas)'), m.sceneParticles !== false, (on) => {
       Store.state.music.sceneParticles = on;
       Store.save();
       Sound.syncVisuals();
+      this.render();
     }));
-    visGroup.append(switchRow('Interação com o mouse', m.sceneInteractive !== false, (on) => {
+    const interactiveOff = !visLocked && m.sceneElements === false && m.sceneParticles === false;
+    visGroup.append(switchRow(tr('panel.music.sceneInteractive', 'Interação com o mouse'), m.sceneInteractive !== false, (on) => {
       Store.state.music.sceneInteractive = on;
       Store.save();
       Sound.syncVisuals();
-    }));
-    visGroup.append(sliderRow('Intensidade das animações', 0, 100, m.sceneIntensity == null ? 65 : m.sceneIntensity, v => v + '%', v => {
+    }, { disabled: visLocked || interactiveOff }));
+    if (interactiveOff) {
+      visGroup.append(el('p', 'panel-lock-note', tr('panel.lock.sceneInteractiveOff', 'Ative elementos de fundo ou partículas musicais para usar a interação.')));
+    }
+    visGroup.append(sliderRow(tr('panel.music.sceneIntensity', 'Intensidade das animações'), 0, 100, m.sceneIntensity == null ? 65 : m.sceneIntensity, v => v + '%', v => {
       Store.state.music.sceneIntensity = v;
       Store.save();
       if (typeof Motion !== 'undefined') Motion.readState();
     }));
+    lockGroup(visGroup, visLocked, visReason);
     sec.append(visGroup);
-    sec.append(el('p', 'panel-note', 'Flowers traz ramos e rosas na base com pétalas que desviam do mouse; March traz cercas de trincheira e brasas subindo com o ponteiro.'));
+    sec.append(el('p', 'panel-note', tr('panel.music.animNote', 'Flowers traz ramos e rosas na base com pétalas que desviam do mouse; March traz cercas de trincheira e brasas subindo com o ponteiro.')));
     return sec;
   },
 
@@ -734,8 +893,11 @@ const Panel = {
       const isPlaying = isSelected && typeof Sound !== 'undefined' && Sound.playing;
       tile.classList.toggle('active', isSelected);
       tile.classList.toggle('playing', isPlaying);
-      tile.title = isPlaying ? 'Pausar ' + title : 'Tocar ' + title;
-      tile.setAttribute('aria-label', isPlaying ? 'Pausar ' + title : 'Tocar ' + title);
+      const labelTxt = isPlaying
+        ? tr('panel.music.pause', 'Pausar {title}', { title })
+        : tr('panel.music.play', 'Tocar {title}', { title });
+      tile.title = labelTxt;
+      tile.setAttribute('aria-label', labelTxt);
       tile.setAttribute('aria-pressed', isPlaying ? 'true' : 'false');
       const badge = tile.querySelector('.music-cover-play-badge');
       if (badge) badge.innerHTML = svgIcon(isPlaying ? 'pause' : 'play');
@@ -744,7 +906,7 @@ const Panel = {
 
   /* ---- botão que abre o editor direto na página ---- */
   editOnScreen(page) {
-    const b = el('button', 'chip', svgIcon('grip') + '<span>Editar na tela</span>');
+    const b = el('button', 'chip', svgIcon('grip') + '<span>' + tr('panel.editOnScreen', 'Editar na tela') + '</span>');
     b.type = 'button';
     b.addEventListener('click', () => {
       this.close();
@@ -758,6 +920,7 @@ const Panel = {
     const list = el('div', 'drag-list');
     const lockedIndex = items.findIndex(x => x.locked);
     const renderExtra = opts && opts.renderExtra;
+    const labelKeyPrefix = (opts && opts.labelPrefix) || '';
 
     const persist = (arr) => {
       if (lockedIndex >= 0) {
@@ -775,14 +938,15 @@ const Panel = {
 
     items.forEach((item, idx) => {
       const def = defs.find(d => d.id === item.id) || { label: item.id };
+      const label = labelKeyPrefix ? tr(labelKeyPrefix + item.id, def.label) : def.label;
       const row = el('div', 'drag-row' + (item.locked ? ' locked' : '') + (item.on ? '' : ' off'));
       row.draggable = !item.locked;
       row.dataset.id = item.id;
       row.append(el('span', 'drag-handle', item.locked ? svgIcon('lock') : svgIcon('grip')));
-      row.append(el('span', 'drag-label', def.label));
+      row.append(el('span', 'drag-label', label));
 
       if (item.locked) {
-        row.append(el('span', 'drag-fixed', 'fixo'));
+        row.append(el('span', 'drag-fixed', tr('panel.fixed', 'fixo')));
       } else {
         if (renderExtra) {
           const extra = renderExtra(item, row, () => persist(items));
@@ -793,14 +957,15 @@ const Panel = {
         sw.type = 'button';
         sw.setAttribute('role', 'switch');
         sw.setAttribute('aria-checked', item.on ? 'true' : 'false');
-        sw.setAttribute('aria-label', (item.on ? 'Ocultar ' : 'Mostrar ') + def.label);
-        sw.title = item.on ? 'Ocultar' : 'Mostrar';
+        const toggleLabel = (item.on ? tr('panel.hide', 'Ocultar') : tr('panel.show', 'Mostrar')) + ' ' + label;
+        sw.setAttribute('aria-label', toggleLabel);
+        sw.title = item.on ? tr('panel.hide', 'Ocultar') : tr('panel.show', 'Mostrar');
         sw.addEventListener('click', (e) => {
           e.stopPropagation();
           item.on = !item.on;
           sw.classList.toggle('on', item.on);
           sw.setAttribute('aria-checked', item.on ? 'true' : 'false');
-          sw.setAttribute('aria-label', (item.on ? 'Ocultar ' : 'Mostrar ') + def.label);
+          sw.setAttribute('aria-label', (item.on ? tr('panel.hide', 'Ocultar') : tr('panel.show', 'Mostrar')) + ' ' + label);
           row.classList.toggle('off', !item.on);
           persist(items);
         });
@@ -812,8 +977,8 @@ const Panel = {
         const up = el('button', 'drag-move', svgIcon('chevU'));
         up.type = 'button';
         up.disabled = !canUp;
-        up.title = 'Mover para cima';
-        up.setAttribute('aria-label', 'Mover ' + def.label + ' para cima');
+        up.title = tr('panel.moveUp', 'Mover para cima');
+        up.setAttribute('aria-label', tr('panel.moveItemUp', 'Mover {label} para cima', { label }));
         up.addEventListener('click', (e) => {
           e.stopPropagation();
           if (!canUp) return;
@@ -825,8 +990,8 @@ const Panel = {
         const down = el('button', 'drag-move', svgIcon('chevD'));
         down.type = 'button';
         down.disabled = !canDown;
-        down.title = 'Mover para baixo';
-        down.setAttribute('aria-label', 'Mover ' + def.label + ' para baixo');
+        down.title = tr('panel.moveDown', 'Mover para baixo');
+        down.setAttribute('aria-label', tr('panel.moveItemDown', 'Mover {label} para baixo', { label }));
         down.addEventListener('click', (e) => {
           e.stopPropagation();
           if (!canDown) return;
@@ -872,38 +1037,47 @@ const Panel = {
   },
 
   /* ---- bloco padronizado de "Durante a inatividade" ---- */
-  idleSwitchList(sec, noteText, items) {
-    sec.append(pSub('Durante a inatividade'));
+  idleSwitchList(sec, noteText, items, lockOpts) {
+    sec.append(pSub(tr('panel.duringIdle', 'Durante a inatividade')));
     sec.append(el('p', 'panel-note', noteText));
     const idleTimeout = Store.state.idle ? Number(Store.state.idle.timeout) : 60;
     if (!idleTimeout) {
-      const hint = el('div', 'panel-hint-box', '<span>O modo calmo está desligado.</span>');
-      const goBtn = el('button', 'panel-hint-link', 'Configurar');
+      const hint = el('div', 'panel-hint-box', '<span>' + tr('panel.idleOffNote', 'O modo calmo está desligado.') + '</span>');
+      const goBtn = el('button', 'panel-hint-link', tr('panel.configure', 'Configurar'));
       goBtn.type = 'button';
       goBtn.addEventListener('click', () => this.openDrawer('general'));
       hint.append(goBtn);
       sec.append(hint);
     }
+    const extraLock = !!(lockOpts && lockOpts.locked);
+    const allLocked = !idleTimeout || extraLock;
+    const reason = (lockOpts && lockOpts.reason) || (!idleTimeout ? tr('panel.lock.idleOff', 'Ligue o modo calmo em Geral para configurar o comportamento em inatividade.') : '');
+    const box = pGroup(allLocked);
     items.forEach(item => {
-      sec.append(switchRow(item.label, item.checked, item.onChange, { locked: item.locked }));
+      box.append(switchRow(item.label, item.checked, item.onChange, {
+        locked: item.locked,
+        disabled: !item.locked && (allLocked || !!item.disabled)
+      }));
     });
+    if (allLocked && reason) box.append(el('p', 'panel-lock-note', reason));
+    sec.append(box);
   },
 
   /* ================= 4. página: início (inclui atalhos) ================= */
   homeSection() {
-    const sec = pSection('home', 'Início');
+    const sec = pSection('home', tr('panel.drawer.home', 'Início'));
 
-    sec.append(pSub('Elementos da página'));
-    sec.append(el('p', 'panel-note', 'Arraste para reordenar ou use os interruptores para mostrar e ocultar. O relógio é fixo.'));
+    sec.append(pSub(tr('panel.home.elements', 'Elementos da página')));
+    sec.append(el('p', 'panel-note', tr('panel.home.elementsNote', 'Arraste para reordenar ou use os interruptores para mostrar e ocultar. O relógio é fixo.')));
     const items = HomePage.layout();
     sec.append(this.dragEditor(items, HOME_LAYOUT, (arr) => {
       Store.state.home.layout = arr;
       Store.save();
       HomePage.applyLayout();
       this.render();
-    }));
+    }, { labelPrefix: 'home.layout.' }));
 
-    const resetLayout = el('button', 'chip', svgIcon('reset') + '<span>Restaurar padrão</span>');
+    const resetLayout = el('button', 'chip', svgIcon('reset') + '<span>' + tr('panel.restoreDefault', 'Restaurar padrão') + '</span>');
     resetLayout.type = 'button';
     resetLayout.addEventListener('click', () => {
       Store.state.home.layout = Store.defaults().home.layout;
@@ -913,17 +1087,17 @@ const Panel = {
     });
     sec.append(actionRow([this.editOnScreen('home'), resetLayout]));
 
-    sec.append(pSub('Atalhos da tela inicial'));
-    sec.append(el('p', 'panel-note', 'Escolha quais atalhos aparecem abaixo da data e a ordem de exibição.'));
+    sec.append(pSub(tr('panel.home.chips', 'Atalhos da tela inicial')));
+    sec.append(el('p', 'panel-note', tr('panel.home.chipsNote', 'Escolha quais atalhos aparecem abaixo da data e a ordem de exibição.')));
     const chipsItems = HomePage.chipsLayout();
     sec.append(this.dragEditor(chipsItems, HOME_CHIP_DEFS, (arr) => {
       Store.state.home.chips = arr;
       Store.save();
       HomePage.renderChips();
       this.render();
-    }));
+    }, { labelPrefix: 'home.chipDef.' }));
 
-    const resetChips = el('button', 'chip', svgIcon('reset') + '<span>Restaurar padrão</span>');
+    const resetChips = el('button', 'chip', svgIcon('reset') + '<span>' + tr('panel.restoreDefault', 'Restaurar padrão') + '</span>');
     resetChips.type = 'button';
     resetChips.addEventListener('click', () => {
       Store.state.home.chips = Store.defaults().home.chips;
@@ -935,11 +1109,11 @@ const Panel = {
 
     this.idleSwitchList(
       sec,
-      'O relógio permanece sempre visível; escolha quais elementos continuam aparecendo no modo calmo.',
+      tr('panel.home.idleNote', 'O relógio permanece sempre visível; escolha quais elementos continuam aparecendo no modo calmo.'),
       HomePage.layout().map(item => {
         const def = HOME_LAYOUT.find(d => d.id === item.id) || { label: item.id };
         return {
-          label: def.label,
+          label: tr('home.layout.' + item.id, def.label),
           locked: item.id === 'clock',
           checked: item.idle !== false,
           onChange: (on) => {
@@ -960,28 +1134,28 @@ const Panel = {
   /* ================= 5. página: cronômetro ================= */
   timerSection() {
     const t = Store.state.timer;
-    const sec = pSection('timer', 'Cronômetro');
+    const sec = pSection('timer', tr('panel.drawer.timer', 'Cronômetro'));
     const apply = (sync) => {
       TimerPage.applyConfig();
       if (sync) TimerPage.syncUI();
       Store.save();
     };
 
-    sec.append(pSub('Estilo da página'));
+    sec.append(pSub(tr('panel.timer.viewSub', 'Estilo da página')));
     const viewCtl = pCtl();
     viewCtl.append(chipGroup([
-      { id: 'classic', label: 'Clássica' },
-      { id: 'focus',   label: 'Minimalista' }
+      { id: 'classic', label: tr('panel.timer.classic', 'Clássica') },
+      { id: 'focus',   label: tr('panel.timer.focus', 'Minimalista') }
     ], t.view || 'classic', (id) => {
       Store.state.timer.view = id;
       apply(true);
       this.render();
     }));
     sec.append(viewCtl);
-    sec.append(el('p', 'panel-note', 'Na versão minimalista fica apenas o relógio. Pressione e arraste: cima inicia/pausa, direita reinicia, baixo troca o preset e esquerda alterna o modo.'));
+    sec.append(el('p', 'panel-note', tr('panel.timer.viewNote', 'Na versão minimalista fica apenas o relógio. Pressione e arraste: cima inicia/pausa, direita reinicia, baixo troca o preset e esquerda alterna o modo.')));
 
-    sec.append(pSub('Número e dígitos'));
-    const fontCtl = pCtl('<span>Fonte</span>');
+    sec.append(pSub(tr('panel.timer.digitsSub', 'Número e dígitos')));
+    const fontCtl = pCtl('<span>' + tr('panel.timer.font', 'Fonte') + '</span>');
     Themes.ensureFonts(FONTS.map(f => f.id));
     fontCtl.append(chipGroup(
       FONTS.map(f => ({ id: f.id, label: f.label, cls: 'font-chip', style: { fontFamily: f.family } })),
@@ -994,98 +1168,101 @@ const Panel = {
     ));
     sec.append(fontCtl);
 
-    sec.append(sliderRow('Tamanho', 48, 160, t.size, v => v + 'px', v => {
+    sec.append(sliderRow(tr('panel.timer.size', 'Tamanho'), 48, 160, t.size, v => v + 'px', v => {
       Store.state.timer.size = v;
       apply();
     }));
-    sec.append(sliderRow('Peso da fonte', 200, 800, t.weight, v => String(v), v => {
+    sec.append(sliderRow(tr('panel.timer.weight', 'Peso da fonte'), 200, 800, t.weight, v => String(v), v => {
       Store.state.timer.weight = v;
       apply();
     }, 100));
-    sec.append(sliderRow('Espaçamento', 0, 20, t.tracking, v => (v / 100).toFixed(2) + 'em', v => {
+    sec.append(sliderRow(tr('panel.timer.tracking', 'Espaçamento'), 0, 20, t.tracking, v => (v / 100).toFixed(2) + 'em', v => {
       Store.state.timer.tracking = v;
       apply();
     }));
 
-    sec.append(accentColorControl('Cor do número', t.tint || '', (val) => {
+    sec.append(accentColorControl(tr('panel.timer.tint', 'Cor do número'), t.tint || '', (val) => {
       Store.state.timer.tint = val;
       apply();
     }));
 
-    const animCtl = pCtl('<span>Animação dos dígitos</span>');
+    const animCtl = pCtl('<span>' + tr('panel.timer.digitAnim', 'Animação dos dígitos') + '</span>');
     animCtl.append(chipGroup([
-      { id: 'none', label: 'Nenhuma' },
-      { id: 'flip', label: 'Flip' }
+      { id: 'none', label: tr('panel.timer.none', 'Nenhuma') },
+      { id: 'flip', label: tr('panel.timer.flip', 'Flip') }
     ], t.digitAnim || 'none', (id) => {
       Store.state.timer.digitAnim = id;
       apply();
       this.render();
     }));
     sec.append(animCtl);
-    sec.append(switchRow('Dois-pontos piscando', t.blink, (on) => {
+    sec.append(switchRow(tr('panel.timer.blink', 'Dois-pontos piscando'), t.blink, (on) => {
       Store.state.timer.blink = on;
       apply();
     }));
-    sec.append(switchRow('Mostrar rótulo do preset', t.label, (on) => {
+    sec.append(switchRow(tr('panel.timer.showLabel', 'Mostrar rótulo do preset'), t.label, (on) => {
       Store.state.timer.label = on;
       apply();
     }));
 
-    sec.append(pSub('Efeitos do número'));
-    sec.append(switchRow('Brilho / neon', t.effectGlow, (on) => {
+    sec.append(pSub(tr('panel.timer.effectsSub', 'Efeitos do número')));
+    sec.append(switchRow(tr('panel.timer.glow', 'Brilho / neon'), t.effectGlow, (on) => {
       Store.state.timer.effectGlow = on;
       apply();
       this.render();
     }));
     const glowGroup = pGroup(!t.effectGlow);
-    glowGroup.append(sliderRow('Intensidade do brilho', 0, 100, t.glow, v => v === 0 ? 'desligado' : v + '%', v => {
+    glowGroup.append(sliderRow(tr('panel.timer.glowInt', 'Intensidade do brilho'), 0, 100, t.glow, v => v === 0 ? tr('panel.timer.off', 'desligado') : v + '%', v => {
       Store.state.timer.glow = v;
       apply();
     }));
+    lockGroup(glowGroup, !t.effectGlow, !t.effectGlow ? tr('panel.lock.timerGlowOff', 'Ative Brilho / neon para ajustar a intensidade.') : '');
     sec.append(glowGroup);
-    sec.append(switchRow('Sombra projetada', t.effectShadow, (on) => {
+
+    sec.append(switchRow(tr('panel.timer.shadow', 'Sombra projetada'), t.effectShadow, (on) => {
       Store.state.timer.effectShadow = on;
       apply();
     }));
-    sec.append(switchRow('Contorno vazado', t.effectOutline, (on) => {
+    sec.append(switchRow(tr('panel.timer.outline', 'Contorno vazado'), t.effectOutline, (on) => {
       Store.state.timer.effectOutline = on;
       apply();
     }));
-    sec.append(switchRow('Pulsação suave', t.effectPulse, (on) => {
+    sec.append(switchRow(tr('panel.timer.pulse', 'Pulsação suave'), t.effectPulse, (on) => {
       Store.state.timer.effectPulse = on;
       apply();
     }));
 
-    sec.append(pSub('Anel e fundo do relógio'));
-    sec.append(switchRow('Anel de progresso', t.ring, (on) => {
+    sec.append(pSub(tr('panel.timer.ringSub', 'Anel e fundo do relógio')));
+    sec.append(switchRow(tr('panel.timer.ring', 'Anel de progresso'), t.ring, (on) => {
       Store.state.timer.ring = on;
       apply();
       this.render();
     }));
     const ringGroup = pGroup(!t.ring);
-    ringGroup.append(sliderRow('Espessura do anel', 1, 12, t.ringWidth, v => v + 'px', v => {
+    ringGroup.append(sliderRow(tr('panel.timer.ringWidth', 'Espessura do anel'), 1, 12, t.ringWidth, v => v + 'px', v => {
       Store.state.timer.ringWidth = v;
       apply();
     }));
-    const ringCtl = pCtl('<span>Estilo do anel</span>');
+    const ringCtl = pCtl('<span>' + tr('panel.timer.ringStyle', 'Estilo do anel') + '</span>');
     ringCtl.append(chipGroup([
-      { id: 'solid',    label: 'Sólido' },
-      { id: 'gradient', label: 'Gradiente' },
-      { id: 'dashed',   label: 'Tracejado' }
+      { id: 'solid',    label: tr('panel.timer.solid', 'Sólido') },
+      { id: 'gradient', label: tr('panel.timer.gradient', 'Gradiente') },
+      { id: 'dashed',   label: tr('panel.timer.dashed', 'Tracejado') }
     ], t.ringStyle || 'solid', (id) => {
       Store.state.timer.ringStyle = id;
       apply();
       this.render();
     }));
     ringGroup.append(ringCtl);
+    lockGroup(ringGroup, !t.ring, !t.ring ? tr('panel.lock.timerRingOff', 'Ative o anel de progresso para escolher espessura e estilo.') : '');
     sec.append(ringGroup);
 
-    const backCtl = pCtl('<span>Atrás do número</span>');
+    const backCtl = pCtl('<span>' + tr('panel.timer.backdrop', 'Atrás do número') + '</span>');
     backCtl.append(chipGroup([
-      { id: 'none',  label: 'Nenhum' },
-      { id: 'glass', label: 'Vidro' },
-      { id: 'solid', label: 'Cartão' },
-      { id: 'halo',  label: 'Halo' }
+      { id: 'none',  label: tr('panel.timer.noneN', 'Nenhum') },
+      { id: 'glass', label: tr('panel.timer.glass', 'Vidro') },
+      { id: 'solid', label: tr('panel.timer.card', 'Cartão') },
+      { id: 'halo',  label: tr('panel.timer.halo', 'Halo') }
     ], t.backdrop || 'none', (id) => {
       Store.state.timer.backdrop = id;
       apply();
@@ -1093,70 +1270,72 @@ const Panel = {
     }));
     sec.append(backCtl);
 
-    sec.append(pSub('Sessões e durações'));
-    const durCtl = pCtl('<span>Durações (min)</span>');
+    sec.append(pSub(tr('panel.timer.sessionsSub', 'Sessões e durações')));
+    const durCtl = pCtl('<span>' + tr('panel.timer.durations', 'Durações (min)') + '</span>');
     const durGrid = el('div', 'num-grid');
-    durGrid.append(numRow('Foco', t.durations.focus, 1, 180, v => {
+    durGrid.append(numRow(tr('panel.timer.durFocus', 'Foco'), t.durations.focus, 1, 180, v => {
       Store.state.timer.durations.focus = v;
       apply(true);
     }, true));
-    durGrid.append(numRow('Pausa curta', t.durations.short, 1, 60, v => {
+    durGrid.append(numRow(tr('panel.timer.durShort', 'Pausa curta'), t.durations.short, 1, 60, v => {
       Store.state.timer.durations.short = v;
       apply(true);
     }, true));
-    durGrid.append(numRow('Pausa longa', t.durations.long, 1, 90, v => {
+    durGrid.append(numRow(tr('panel.timer.durLong', 'Pausa longa'), t.durations.long, 1, 90, v => {
       Store.state.timer.durations.long = v;
       apply(true);
     }, true));
-    durGrid.append(numRow('Personalizado', t.durations.custom, 1, 180, v => {
+    durGrid.append(numRow(tr('panel.timer.durCustom', 'Personalizado'), t.durations.custom, 1, 180, v => {
       Store.state.timer.durations.custom = v;
       apply(true);
     }, true));
     durCtl.append(durGrid);
     sec.append(durCtl);
 
-    sec.append(switchRow('Ciclo automático', t.autoCycle, (on) => {
+    sec.append(switchRow(tr('panel.timer.autoCycle', 'Ciclo automático'), t.autoCycle, (on) => {
       Store.state.timer.autoCycle = on;
       apply(true);
       this.render();
     }));
     const cycleGroup = pGroup(!t.autoCycle);
-    cycleGroup.append(numRow('Focos antes da pausa longa', t.cycle, 2, 12, v => {
+    cycleGroup.append(numRow(tr('panel.timer.cycleCount', 'Focos antes da pausa longa'), t.cycle, 2, 12, v => {
       Store.state.timer.cycle = v;
       apply(true);
     }));
+    lockGroup(cycleGroup, !t.autoCycle, !t.autoCycle ? tr('panel.lock.timerCycleOff', 'Ative o ciclo automático para definir o intervalo da pausa longa.') : '');
     sec.append(cycleGroup);
 
-    sec.append(switchRow('Som ao finalizar', t.sound, (on) => {
+    sec.append(switchRow(tr('panel.timer.soundFinish', 'Som ao finalizar'), t.sound, (on) => {
       Store.state.timer.sound = on;
       Store.save();
     }));
 
-    sec.append(pSub('Fundo durante o foco'));
-    sec.append(sliderRow('Escurecimento do fundo', 0, 100, t.dim, v => v + '%', v => {
+    sec.append(pSub(tr('panel.timer.bgFocusSub', 'Fundo durante o foco')));
+    sec.append(sliderRow(tr('panel.timer.dim', 'Escurecimento do fundo'), 0, 100, t.dim, v => v + '%', v => {
       Store.state.timer.dim = v;
       apply();
     }));
-    sec.append(switchRow('Desfocar o fundo', t.blur, (on) => {
+    sec.append(switchRow(tr('panel.timer.blur', 'Desfocar o fundo'), t.blur, (on) => {
       Store.state.timer.blur = on;
       apply();
     }));
 
     const idleDefs = [
-      { id: 'ring',     label: 'Anel ao redor' },
-      { id: 'label',    label: 'Rótulo do preset' },
-      { id: 'tabs',     label: 'Abas temporizador/cronômetro' },
-      { id: 'presets',  label: 'Botões de preset' },
-      { id: 'sessions', label: 'Sessões de hoje' },
-      { id: 'controls', label: 'Controles' },
-      { id: 'hint',     label: 'Dica de atalhos' }
+      { id: 'ring',     label: tr('panel.timer.idle.ring', 'Anel ao redor') },
+      { id: 'label',    label: tr('panel.timer.idle.label', 'Rótulo do preset') },
+      { id: 'tabs',     label: tr('panel.timer.idle.tabs', 'Abas temporizador/cronômetro') },
+      { id: 'presets',  label: tr('panel.timer.idle.presets', 'Botões de preset') },
+      { id: 'sessions', label: tr('panel.timer.idle.sessions', 'Sessões de hoje') },
+      { id: 'controls', label: tr('panel.timer.idle.controls', 'Controles') },
+      { id: 'hint',     label: tr('panel.timer.idle.hint', 'Dica de atalhos') }
     ];
     t.idle = t.idle || {};
+    const focusLocked = (t.view || 'classic') === 'focus';
     this.idleSwitchList(
       sec,
-      'O relógio permanece sempre visível; na versão minimalista apenas ele é exibido.',
+      tr('panel.timer.idleNote', 'O relógio permanece sempre visível; na versão minimalista apenas ele é exibido.'),
       [
-        { label: 'Relógio', locked: true, checked: true },
+        { label: tr('panel.timer.idle.clock', 'Relógio'), locked: true, checked: true },
         ...idleDefs.map(d => ({
           label: d.label,
           checked: t.idle[d.id] !== false,
@@ -1166,7 +1345,11 @@ const Panel = {
             Store.save();
           }
         }))
-      ]
+      ],
+      {
+        locked: focusLocked,
+        reason: focusLocked ? tr('panel.lock.timerFocusView', 'Na versão minimalista apenas o relógio permanece visível.') : ''
+      }
     );
 
     return sec;
@@ -1174,20 +1357,20 @@ const Panel = {
 
   /* ================= 6. página: progresso ================= */
   trackerSection() {
-    const tr = Store.state.tracker;
-    const sec = pSection('chart', 'Progresso');
+    const trState = Store.state.tracker;
+    const sec = pSection('chart', tr('panel.drawer.tracker', 'Progresso'));
 
-    sec.append(pSub('Elementos da página'));
-    sec.append(el('p', 'panel-note', 'Arraste para reordenar e use os interruptores para mostrar ou ocultar cada bloco.'));
+    sec.append(pSub(tr('panel.tracker.elements', 'Elementos da página')));
+    sec.append(el('p', 'panel-note', tr('panel.tracker.elementsNote', 'Arraste para reordenar e use os interruptores para mostrar ou ocultar cada bloco.')));
     const items = TrackerPage.layout();
     sec.append(this.dragEditor(items, TRACKER_LAYOUT, (arr) => {
       Store.state.tracker.layout = arr;
       Store.save();
       TrackerPage.applyLayout();
       this.render();
-    }));
+    }, { labelPrefix: 'tracker.layout.' }));
 
-    const resetLayout = el('button', 'chip', svgIcon('reset') + '<span>Restaurar padrão</span>');
+    const resetLayout = el('button', 'chip', svgIcon('reset') + '<span>' + tr('panel.restoreDefault', 'Restaurar padrão') + '</span>');
     resetLayout.type = 'button';
     resetLayout.addEventListener('click', () => {
       Store.state.tracker.layout = Store.defaults().tracker.layout;
@@ -1198,8 +1381,8 @@ const Panel = {
     });
     sec.append(actionRow([this.editOnScreen('tracker'), resetLayout]));
 
-    sec.append(pSub('Cartões de resumo (até 8)'));
-    sec.append(el('p', 'panel-note', 'Arraste para reordenar, escolha quais exibir e alterne entre tamanho 1x (quadrado) e 2x (largo).'));
+    sec.append(pSub(tr('panel.tracker.widgets', 'Cartões de resumo (até 8)')));
+    sec.append(el('p', 'panel-note', tr('panel.tracker.widgetsNote', 'Arraste para reordenar, escolha quais exibir e alterne entre tamanho 1x (quadrado) e 2x (largo).')));
     const widgets = TrackerPage.widgets();
     sec.append(this.dragEditor(widgets, TRACKER_WIDGET_DEFS, (arr) => {
       Store.state.tracker.widgets = arr;
@@ -1207,25 +1390,28 @@ const Panel = {
       TrackerPage.render();
       this.render();
     }, {
+      labelPrefix: 'tracker.widget.',
       renderExtra: (item, row, persist) => {
         const def = TRACKER_WIDGET_DEFS.find(d => d.id === item.id) || { label: item.id };
-        const sizeBtn = el('button', 'drag-size' + (item.size === '2x' ? ' active' : ''), item.size === '2x' ? '2x' : '1x');
+        const wLabel = tr('tracker.widget.' + item.id, def.label);
+        const curSize = item.size === '2x' ? '2x' : '1x';
+        const sizeBtn = el('button', 'drag-size' + (curSize === '2x' ? ' active' : ''), curSize);
         sizeBtn.type = 'button';
-        sizeBtn.title = 'Alternar tamanho: 1x (quadrado) ou 2x (largo)';
-        sizeBtn.setAttribute('aria-label', 'Tamanho do cartão ' + def.label + ': ' + (item.size === '2x' ? '2x' : '1x'));
+        sizeBtn.title = tr('panel.tracker.sizeHint', 'Alternar tamanho: 1x (quadrado) ou 2x (largo)');
+        sizeBtn.setAttribute('aria-label', tr('panel.tracker.sizeAria', 'Tamanho do cartão {label}: {size}', { label: wLabel, size: curSize }));
         sizeBtn.addEventListener('click', (e) => {
           e.stopPropagation();
           item.size = item.size === '2x' ? '1x' : '2x';
           sizeBtn.textContent = item.size;
           sizeBtn.classList.toggle('active', item.size === '2x');
-          sizeBtn.setAttribute('aria-label', 'Tamanho do cartão ' + def.label + ': ' + item.size);
+          sizeBtn.setAttribute('aria-label', tr('panel.tracker.sizeAria', 'Tamanho do cartão {label}: {size}', { label: wLabel, size: item.size }));
           persist();
         });
         return sizeBtn;
       }
     }));
 
-    const resetWidgets = el('button', 'chip', svgIcon('reset') + '<span>Restaurar padrão</span>');
+    const resetWidgets = el('button', 'chip', svgIcon('reset') + '<span>' + tr('panel.restoreDefault', 'Restaurar padrão') + '</span>');
     resetWidgets.type = 'button';
     resetWidgets.addEventListener('click', () => {
       Store.state.tracker.widgets = Store.defaults().tracker.widgets;
@@ -1235,12 +1421,12 @@ const Panel = {
     });
     sec.append(actionRow([resetWidgets]));
 
-    sec.append(pSub('Gráfico principal'));
-    sec.append(el('p', 'panel-note', 'Métrica: horas de uso diárias.'));
-    const typeCtl = pCtl('<span>Visual</span>');
+    sec.append(pSub(tr('panel.tracker.mainChart', 'Gráfico principal')));
+    sec.append(el('p', 'panel-note', tr('panel.tracker.mainChartNote', 'Métrica: horas de uso diárias.')));
+    const typeCtl = pCtl('<span>' + tr('panel.tracker.visual', 'Visual') + '</span>');
     typeCtl.append(chipGroup(
-      TRACKER_TYPES.map(t => ({ id: t.id, label: t.label })),
-      tr.chart,
+      TRACKER_TYPES.map(tp => ({ id: tp.id, label: tr('tracker.type.' + tp.id, tp.label) })),
+      trState.chart,
       (id) => {
         Store.state.tracker.chart = id;
         Store.save();
@@ -1251,10 +1437,10 @@ const Panel = {
     ));
     sec.append(typeCtl);
 
-    const periodCtl = pCtl('<span>Período</span>');
+    const periodCtl = pCtl('<span>' + tr('panel.tracker.period', 'Período') + '</span>');
     periodCtl.append(chipGroup(
-      TRACKER_PERIODS.map(p => ({ id: String(p), label: p === 365 ? '1 ano' : p + ' dias' })),
-      String(tr.period),
+      TRACKER_PERIODS.map(p => ({ id: String(p), label: p === 365 ? tr('panel.tracker.year1', '1 ano') : tr('panel.tracker.daysN', '{n} dias', { n: p }) })),
+      String(trState.period),
       (id) => {
         Store.state.tracker.period = +id;
         if (+id !== 365) Store.state.tracker.yearOffset = 0;
@@ -1266,10 +1452,10 @@ const Panel = {
     ));
     sec.append(periodCtl);
 
-    sec.append(pSub('Segundo gráfico'));
-    const c2 = tr.chart2 = tr.chart2 || { on: false, chart: 'ring', period: 365, yearOffset: 0, metric: 'focus' };
+    sec.append(pSub(tr('panel.tracker.secondChart', 'Segundo gráfico')));
+    const c2 = trState.chart2 = trState.chart2 || { on: false, chart: 'ring', period: 365, yearOffset: 0, metric: 'focus' };
     c2.on = TrackerPage.chart2On();
-    sec.append(switchRow('Exibir segundo gráfico', c2.on, (on) => {
+    sec.append(switchRow(tr('panel.tracker.showSecondChart', 'Exibir segundo gráfico'), c2.on, (on) => {
       c2.on = on;
       const arr = TrackerPage.layout();
       const target = arr.find(x => x.id === 'chart2');
@@ -1282,10 +1468,10 @@ const Panel = {
       this.render();
     }));
     if (c2.on) {
-      const metricCtl = pCtl('<span>Métrica</span>');
+      const metricCtl = pCtl('<span>' + tr('panel.tracker.metric', 'Métrica') + '</span>');
       metricCtl.append(chipGroup([
-        { id: 'focus', label: 'Sessões de foco' },
-        { id: 'hours', label: 'Horas de uso' }
+        { id: 'focus', label: tr('panel.tracker.metricFocus', 'Sessões de foco') },
+        { id: 'hours', label: tr('panel.tracker.metricHours', 'Horas de uso') }
       ], c2.metric || 'focus', (id) => {
         c2.metric = id;
         Store.save();
@@ -1295,9 +1481,9 @@ const Panel = {
       }));
       sec.append(metricCtl);
 
-      const typeCtl2 = pCtl('<span>Visual</span>');
+      const typeCtl2 = pCtl('<span>' + tr('panel.tracker.visual', 'Visual') + '</span>');
       typeCtl2.append(chipGroup(
-        TRACKER_TYPES.map(t => ({ id: t.id, label: t.label })),
+        TRACKER_TYPES.map(tp => ({ id: tp.id, label: tr('tracker.type.' + tp.id, tp.label) })),
         c2.chart,
         (id) => {
           c2.chart = id;
@@ -1309,9 +1495,9 @@ const Panel = {
       ));
       sec.append(typeCtl2);
 
-      const periodCtl2 = pCtl('<span>Período</span>');
+      const periodCtl2 = pCtl('<span>' + tr('panel.tracker.period', 'Período') + '</span>');
       periodCtl2.append(chipGroup(
-        TRACKER_PERIODS.map(p => ({ id: String(p), label: p === 365 ? '1 ano' : p + ' dias' })),
+        TRACKER_PERIODS.map(p => ({ id: String(p), label: p === 365 ? tr('panel.tracker.year1', '1 ano') : tr('panel.tracker.daysN', '{n} dias', { n: p }) })),
         String(c2.period),
         (id) => {
           c2.period = +id;
@@ -1325,29 +1511,29 @@ const Panel = {
       sec.append(periodCtl2);
     }
 
-    sec.append(pSub('Heatmaps'));
-    sec.append(sliderRow('Tamanho das células', 10, 34, tr.heatCell || 18, v => v + 'px', v => {
+    sec.append(pSub(tr('panel.tracker.heatmaps', 'Heatmaps')));
+    sec.append(sliderRow(tr('panel.tracker.cellSize', 'Tamanho das células'), 10, 34, trState.heatCell || 18, v => v + 'px', v => {
       Store.state.tracker.heatCell = v;
       Store.save();
       TrackerPage.renderChart();
       if (c2.on) TrackerPage.renderChart2();
     }));
-    sec.append(el('p', 'panel-note', 'Aplica-se aos dois gráficos quando estiverem em grade ou circular. A cor acompanha a intensidade de cada dia.'));
+    sec.append(el('p', 'panel-note', tr('panel.tracker.heatmapsNote', 'Aplica-se aos dois gráficos quando estiverem em grade ou circular. A cor acompanha a intensidade de cada dia.')));
 
-    sec.append(pSub('Meta diária'));
-    const goalStyleCtl = pCtl('<span>Estilo da meta</span>');
+    sec.append(pSub(tr('panel.tracker.goalSub', 'Meta diária')));
+    const goalStyleCtl = pCtl('<span>' + tr('panel.tracker.goalStyle', 'Estilo da meta') + '</span>');
     goalStyleCtl.append(chipGroup([
-      { id: 'bar',        label: 'Barra contínua' },
-      { id: 'ring',       label: 'Medidor circular' },
-      { id: 'milestones', label: 'Com marcos (25%-100%)' }
-    ], tr.goalStyle || 'bar', (id) => {
+      { id: 'bar',        label: tr('panel.tracker.goalBar', 'Barra contínua') },
+      { id: 'ring',       label: tr('panel.tracker.goalRing', 'Medidor circular') },
+      { id: 'milestones', label: tr('panel.tracker.goalMilestones', 'Com marcos (25%-100%)') }
+    ], trState.goalStyle || 'bar', (id) => {
       Store.state.tracker.goalStyle = id;
       Store.save();
       TrackerPage.render();
       this.render();
     }));
     sec.append(goalStyleCtl);
-    sec.append(numRow('Horas por dia', tr.goal, 0, 16, v => {
+    sec.append(numRow(tr('panel.tracker.hoursPerDay', 'Horas por dia'), trState.goal, 0, 16, v => {
       Store.state.tracker.goal = v;
       Store.save();
       TrackerPage.render();
@@ -1359,7 +1545,7 @@ const Panel = {
   /* ================= 7. página: tarefas ================= */
   tasksSection() {
     const cfg = Store.state.tasks;
-    const sec = pSection('tasks', 'Tarefas');
+    const sec = pSection('tasks', tr('panel.drawer.tasks', 'Tarefas'));
 
     const applyTasks = (resetCompose) => {
       Store.save();
@@ -1368,17 +1554,17 @@ const Panel = {
       TasksPage.render();
     };
 
-    sec.append(pSub('Aparência'));
-    sec.append(accentColorControl('Cor de destaque', cfg.accent || '', (val) => {
+    sec.append(pSub(tr('panel.tasks.appearance', 'Aparência')));
+    sec.append(accentColorControl(tr('panel.tasks.accent', 'Cor de destaque'), cfg.accent || '', (val) => {
       Store.state.tasks.accent = val;
       applyTasks();
     }));
 
-    const styleCtl = pCtl('<span>Estilo dos cartões</span>');
+    const styleCtl = pCtl('<span>' + tr('panel.tasks.cardStyle', 'Estilo dos cartões') + '</span>');
     styleCtl.append(chipGroup([
-      { id: 'glass',   label: 'Vidro' },
-      { id: 'solid',   label: 'Sólido' },
-      { id: 'minimal', label: 'Minimalista' }
+      { id: 'glass',   label: tr('panel.tasks.glass', 'Vidro') },
+      { id: 'solid',   label: tr('panel.tasks.solid', 'Sólido') },
+      { id: 'minimal', label: tr('panel.tasks.minimal', 'Minimalista') }
     ], cfg.cardStyle || 'glass', (id) => {
       Store.state.tasks.cardStyle = id;
       applyTasks();
@@ -1386,10 +1572,10 @@ const Panel = {
     }));
     sec.append(styleCtl);
 
-    const densityCtl = pCtl('<span>Densidade da lista</span>');
+    const densityCtl = pCtl('<span>' + tr('panel.tasks.density', 'Densidade da lista') + '</span>');
     densityCtl.append(chipGroup([
-      { id: 'comfortable', label: 'Confortável' },
-      { id: 'compact',     label: 'Compacta' }
+      { id: 'comfortable', label: tr('panel.tasks.comfortable', 'Confortável') },
+      { id: 'compact',     label: tr('panel.tasks.compact', 'Compacta') }
     ], cfg.density || 'comfortable', (id) => {
       Store.state.tasks.density = id;
       applyTasks();
@@ -1397,11 +1583,11 @@ const Panel = {
     }));
     sec.append(densityCtl);
 
-    const checkCtl = pCtl('<span>Caixa de seleção</span>');
+    const checkCtl = pCtl('<span>' + tr('panel.tasks.checkShape', 'Caixa de seleção') + '</span>');
     checkCtl.append(chipGroup([
-      { id: 'rounded', label: 'Arredondada' },
-      { id: 'circle',  label: 'Circular' },
-      { id: 'square',  label: 'Quadrada' }
+      { id: 'rounded', label: tr('panel.tasks.rounded', 'Arredondada') },
+      { id: 'circle',  label: tr('panel.tasks.circle', 'Circular') },
+      { id: 'square',  label: tr('panel.tasks.square', 'Quadrada') }
     ], cfg.checkShape || 'rounded', (id) => {
       Store.state.tasks.checkShape = id;
       applyTasks();
@@ -1409,11 +1595,11 @@ const Panel = {
     }));
     sec.append(checkCtl);
 
-    const animCtl = pCtl('<span>Animação ao adicionar</span>');
+    const animCtl = pCtl('<span>' + tr('panel.tasks.anim', 'Animação ao adicionar') + '</span>');
     animCtl.append(chipGroup([
-      { id: 'slide', label: 'Deslizar' },
-      { id: 'fade',  label: 'Suave' },
-      { id: 'pop',   label: 'Pop' }
+      { id: 'slide', label: tr('panel.tasks.slide', 'Deslizar') },
+      { id: 'fade',  label: tr('panel.tasks.fade', 'Suave') },
+      { id: 'pop',   label: tr('panel.tasks.pop', 'Pop') }
     ], cfg.anim || 'slide', (id) => {
       Store.state.tasks.anim = id;
       applyTasks();
@@ -1421,44 +1607,44 @@ const Panel = {
     }));
     sec.append(animCtl);
 
-    sec.append(pSub('Elementos visíveis'));
-    sec.append(switchRow('Barra de busca', cfg.showSearch !== false, (on) => {
+    sec.append(pSub(tr('panel.tasks.visibleSub', 'Elementos visíveis')));
+    sec.append(switchRow(tr('panel.tasks.showSearch', 'Barra de busca'), cfg.showSearch !== false, (on) => {
       Store.state.tasks.showSearch = on;
       applyTasks();
     }));
-    sec.append(switchRow('Opções rápidas ao criar (prazo, prioridade, categoria)', cfg.showComposeOpts !== false, (on) => {
+    sec.append(switchRow(tr('panel.tasks.showComposeOpts', 'Opções rápidas ao criar (prazo, prioridade, categoria)'), cfg.showComposeOpts !== false, (on) => {
       Store.state.tasks.showComposeOpts = on;
       applyTasks();
     }));
-    sec.append(switchRow('Filtros de prazo, categoria e ordenação', cfg.showExtraControls !== false, (on) => {
+    sec.append(switchRow(tr('panel.tasks.showExtraControls', 'Filtros de prazo, categoria e ordenação'), cfg.showExtraControls !== false, (on) => {
       Store.state.tasks.showExtraControls = on;
       applyTasks();
     }));
-    sec.append(switchRow('Barra de resumo e progresso', !!cfg.showProgress, (on) => {
+    sec.append(switchRow(tr('panel.tasks.showProgress', 'Barra de resumo e progresso'), !!cfg.showProgress, (on) => {
       Store.state.tasks.showProgress = on;
       applyTasks();
     }));
-    sec.append(switchRow('Prazo, prioridade e categoria na linha', cfg.showMeta !== false, (on) => {
+    sec.append(switchRow(tr('panel.tasks.showMeta', 'Prazo, prioridade e categoria na linha'), cfg.showMeta !== false, (on) => {
       Store.state.tasks.showMeta = on;
       applyTasks();
     }));
-    sec.append(switchRow('Data de criação na linha', !!cfg.showCreated, (on) => {
+    sec.append(switchRow(tr('panel.tasks.showCreated', 'Data de criação na linha'), !!cfg.showCreated, (on) => {
       Store.state.tasks.showCreated = on;
       applyTasks();
     }));
-    sec.append(switchRow('Destacar tarefas atrasadas', cfg.highlightOverdue !== false, (on) => {
+    sec.append(switchRow(tr('panel.tasks.highlightOverdue', 'Destacar tarefas atrasadas'), cfg.highlightOverdue !== false, (on) => {
       Store.state.tasks.highlightOverdue = on;
       applyTasks();
     }));
 
-    sec.append(pSub('Lista e comportamento'));
-    const sortCtl = pCtl('<span>Ordenação</span>');
+    sec.append(pSub(tr('panel.tasks.behaviorSub', 'Lista e comportamento')));
+    const sortCtl = pCtl('<span>' + tr('panel.tasks.sort', 'Ordenação') + '</span>');
     sortCtl.append(chipGroup([
-      { id: 'recent',   label: 'Recentes' },
-      { id: 'due',      label: 'Vencimento' },
-      { id: 'priority', label: 'Prioridade' },
-      { id: 'oldest',   label: 'Antigas' },
-      { id: 'alpha',    label: 'A–Z' }
+      { id: 'recent',   label: tr('panel.tasks.sortRecent', 'Recentes') },
+      { id: 'due',      label: tr('panel.tasks.sortDue', 'Vencimento') },
+      { id: 'priority', label: tr('panel.tasks.sortPriority', 'Prioridade') },
+      { id: 'oldest',   label: tr('panel.tasks.sortOldest', 'Antigas') },
+      { id: 'alpha',    label: tr('panel.tasks.sortAlpha', 'A–Z') }
     ], cfg.sort || 'recent', (id) => {
       Store.state.tasks.sort = id;
       applyTasks();
@@ -1466,12 +1652,12 @@ const Panel = {
     }));
     sec.append(sortCtl);
 
-    const defPrioCtl = pCtl('<span>Prioridade padrão ao criar</span>');
+    const defPrioCtl = pCtl('<span>' + tr('panel.tasks.defPrio', 'Prioridade padrão ao criar') + '</span>');
     defPrioCtl.append(chipGroup([
-      { id: 'none',   label: 'Nenhuma' },
-      { id: 'low',    label: 'Baixa' },
-      { id: 'medium', label: 'Média' },
-      { id: 'high',   label: 'Alta' }
+      { id: 'none',   label: tr('panel.tasks.prioNone', 'Nenhuma') },
+      { id: 'low',    label: tr('panel.tasks.prioLow', 'Baixa') },
+      { id: 'medium', label: tr('panel.tasks.prioMedium', 'Média') },
+      { id: 'high',   label: tr('panel.tasks.prioHigh', 'Alta') }
     ], cfg.defaultPriority || 'none', (id) => {
       Store.state.tasks.defaultPriority = id;
       applyTasks(true);
@@ -1479,11 +1665,11 @@ const Panel = {
     }));
     sec.append(defPrioCtl);
 
-    const defDueCtl = pCtl('<span>Vencimento padrão ao criar</span>');
+    const defDueCtl = pCtl('<span>' + tr('panel.tasks.defDue', 'Vencimento padrão ao criar') + '</span>');
     defDueCtl.append(chipGroup([
-      { id: 'none',     label: 'Sem data' },
-      { id: 'today',    label: 'Hoje' },
-      { id: 'tomorrow', label: 'Amanhã' }
+      { id: 'none',     label: tr('panel.tasks.dueNone', 'Sem data') },
+      { id: 'today',    label: tr('panel.tasks.dueToday', 'Hoje') },
+      { id: 'tomorrow', label: tr('panel.tasks.dueTomorrow', 'Amanhã') }
     ], cfg.defaultDue || 'none', (id) => {
       Store.state.tasks.defaultDue = id;
       applyTasks(true);
@@ -1491,11 +1677,11 @@ const Panel = {
     }));
     sec.append(defDueCtl);
 
-    sec.append(switchRow('Concluídas ao final da lista', cfg.doneLast !== false, (on) => {
+    sec.append(switchRow(tr('panel.tasks.doneLast', 'Concluídas ao final da lista'), cfg.doneLast !== false, (on) => {
       Store.state.tasks.doneLast = on;
       applyTasks();
     }));
-    sec.append(switchRow('Som ao concluir', cfg.popSound !== false, (on) => {
+    sec.append(switchRow(tr('panel.tasks.popSound', 'Som ao concluir'), cfg.popSound !== false, (on) => {
       Store.state.tasks.popSound = on;
       Store.save();
     }));
@@ -1503,10 +1689,10 @@ const Panel = {
     cfg.idle = cfg.idle || {};
     this.idleSwitchList(
       sec,
-      'Escolha o que permanece visível na página de tarefas quando o modo calmo estiver ativo.',
+      tr('panel.tasks.idleNote', 'Escolha o que permanece visível na página de tarefas quando o modo calmo estiver ativo.'),
       [
         {
-          label: 'Barra de resumo e progresso',
+          label: tr('panel.tasks.idleSummary', 'Barra de resumo e progresso'),
           checked: cfg.idle.summary !== false,
           onChange: (on) => {
             Store.state.tasks.idle.summary = on;
@@ -1515,7 +1701,7 @@ const Panel = {
           }
         },
         {
-          label: 'Caixa de criação',
+          label: tr('panel.tasks.idleComposer', 'Caixa de criação'),
           checked: !!cfg.idle.composer,
           onChange: (on) => {
             Store.state.tasks.idle.composer = on;
@@ -1524,7 +1710,7 @@ const Panel = {
           }
         },
         {
-          label: 'Busca e filtros',
+          label: tr('panel.tasks.idleControls', 'Busca e filtros'),
           checked: !!cfg.idle.controls,
           onChange: (on) => {
             Store.state.tasks.idle.controls = on;
@@ -1535,33 +1721,50 @@ const Panel = {
       ]
     );
 
-    const resetTasks = el('button', 'chip', svgIcon('reset') + '<span>Restaurar aparência padrão</span>');
+    const resetTasks = el('button', 'chip', svgIcon('reset') + '<span>' + tr('panel.tasks.reset', 'Restaurar aparência padrão') + '</span>');
     resetTasks.type = 'button';
     resetTasks.addEventListener('click', () => {
       const preservedItems = Array.isArray(Store.state.tasks.items) ? Store.state.tasks.items.slice() : [];
       Store.state.tasks = Object.assign(Store.defaults().tasks, { items: preservedItems });
       applyTasks(true);
       this.render();
-      toast('Ajustes de tarefas restaurados', 'reset');
+      toast(tr('panel.tasks.resetToast', 'Ajustes de tarefas restaurados'), 'reset');
     });
     sec.append(actionRow([resetTasks]));
-    sec.append(el('p', 'panel-note', 'Dica: pressione / ou Ctrl+F na tela de tarefas para buscar; dê duplo clique no texto para renomear.'));
+    sec.append(el('p', 'panel-note', tr('panel.tasks.tip', 'Dica: pressione / ou Ctrl+F na tela de tarefas para buscar; dê duplo clique no texto para renomear.')));
     return sec;
   },
 
   /* ================= 8. sistema: geral ================= */
   generalSection() {
-    const sec = pSection('sliders', 'Geral');
+    const sec = pSection('sliders', tr('panel.drawer.general', 'Geral'));
 
-    sec.append(pSub('Modo calmo'));
-    sec.append(el('p', 'panel-note', 'Depois de um tempo sem atividade, os detalhes somem. Você pode escolher o que permanece visível em Início e Cronômetro.'));
-    const idleCtl = pCtl('<span>Esconder detalhes após</span>');
+    sec.append(pSub(tr('panel.general.langSub', 'Idioma')));
+    const langCtl = pCtl('<span>' + tr('panel.general.langLabel', 'Idioma da interface') + '</span>');
+    const curLang = typeof getLang === 'function' ? getLang() : (Store.state.lang === 'en' ? 'en' : 'pt');
+    langCtl.append(chipGroup([
+      { id: 'pt', label: 'Português (BR)' },
+      { id: 'en', label: 'English' }
+    ], curLang, (id) => {
+      if (typeof setLang === 'function') setLang(id);
+      else {
+        Store.state.lang = id;
+        Store.save();
+        this.render();
+      }
+    }));
+    sec.append(langCtl);
+    sec.append(el('p', 'panel-note', tr('panel.general.langNote', 'Altera textos, datas e menus instantaneamente em todas as páginas.')));
+
+    sec.append(pSub(tr('panel.general.calmSub', 'Modo calmo')));
+    sec.append(el('p', 'panel-note', tr('panel.general.calmNote', 'Depois de um tempo sem atividade, os detalhes somem. Você pode escolher o que permanece visível em Início e Cronômetro.')));
+    const idleCtl = pCtl('<span>' + tr('panel.general.hideAfter', 'Esconder detalhes após') + '</span>');
     idleCtl.append(chipGroup([
       { id: '30',  label: '30s' },
       { id: '60',  label: '1min' },
       { id: '120', label: '2min' },
       { id: '300', label: '5min' },
-      { id: '0',   label: 'Desligado' }
+      { id: '0',   label: tr('panel.general.off', 'Desligado') }
     ], String(Store.state.idle.timeout), (id) => {
       Store.state.idle.timeout = +id;
       Store.save();
@@ -1570,8 +1773,8 @@ const Panel = {
     }));
     sec.append(idleCtl);
 
-    sec.append(pSub('Bolinha de navegação'));
-    sec.append(switchRow('Expandir ao passar o mouse', !!(Store.state.dock && Store.state.dock.hover), (on) => {
+    sec.append(pSub(tr('panel.general.dockSub', 'Bolinha de navegação')));
+    sec.append(switchRow(tr('panel.general.dockHover', 'Expandir ao passar o mouse'), !!(Store.state.dock && Store.state.dock.hover), (on) => {
       Store.state.dock.hover = on;
       Store.save();
       if (!on && Router.hovering) {
@@ -1579,26 +1782,28 @@ const Panel = {
         Router.toggleDock(false);
       }
     }));
-    sec.append(el('p', 'panel-note', 'Arraste a bolinha para 8 posições na tela. Perto das bordas direitas, o painel abre pela esquerda.'));
+    sec.append(el('p', 'panel-note', tr('panel.general.dockNote', 'Arraste a bolinha para 8 posições na tela. Perto das bordas direitas, o painel abre pela esquerda.')));
 
-    const musicShortcut = el('div', 'panel-hint-box', '<span>Músicas temáticas, trilhas e capas ficam em Aparência.</span>');
-    const goMusic = el('button', 'panel-hint-link', 'Abrir música');
+    const musicShortcut = el('div', 'panel-hint-box', '<span>' + tr('panel.general.musicHint', 'Músicas temáticas, trilhas e capas ficam em Aparência.') + '</span>');
+    const goMusic = el('button', 'panel-hint-link', tr('panel.general.openMusic', 'Abrir música'));
     goMusic.type = 'button';
     goMusic.addEventListener('click', () => this.openDrawer('music'));
     musicShortcut.append(goMusic);
     sec.append(musicShortcut);
 
-    sec.append(pSub('Dados e backup'));
-    sec.append(el('p', 'panel-note',
-      Usage.daysUsed() + ' dias · ' + fmtHours(Usage.totalSeconds()) + ' de uso · ' +
-      Store.state.tracker.tasksCompleted + ' tarefas realizadas.'));
-    const exportBtn = el('button', 'chip', svgIcon('download') + '<span>Exportar dados (JSON)</span>');
+    sec.append(pSub(tr('panel.general.dataSub', 'Dados e backup')));
+    sec.append(el('p', 'panel-note', tr('panel.general.dataSummary', '{days} dias · {hours} de uso · {tasks} tarefas realizadas.', {
+      days: Usage.daysUsed(),
+      hours: fmtHours(Usage.totalSeconds()),
+      tasks: Store.state.tracker.tasksCompleted
+    })));
+    const exportBtn = el('button', 'chip', svgIcon('download') + '<span>' + tr('panel.general.export', 'Exportar dados (JSON)') + '</span>');
     exportBtn.type = 'button';
     exportBtn.addEventListener('click', () => TrackerPage.exportData());
     sec.append(actionRow([exportBtn]));
 
     if (!this.confirmingReset) {
-      const btn = el('button', 'danger-btn', 'Apagar todos os dados');
+      const btn = el('button', 'danger-btn', tr('panel.general.eraseAll', 'Apagar todos os dados'));
       btn.type = 'button';
       btn.style.marginTop = '14px';
       btn.addEventListener('click', () => {
@@ -1607,15 +1812,15 @@ const Panel = {
       });
       sec.append(btn);
     } else {
-      const confirmBox = el('div', 'panel-hint-box', '<span>Apagar tarefas, progresso, quadro e ajustes?</span>');
+      const confirmBox = el('div', 'panel-hint-box', '<span>' + tr('panel.general.eraseConfirm', 'Apagar tarefas, progresso, quadro e ajustes?') + '</span>');
       confirmBox.style.marginTop = '14px';
-      const cancelBtn = el('button', 'chip', 'Cancelar');
+      const cancelBtn = el('button', 'chip', tr('panel.general.cancel', 'Cancelar'));
       cancelBtn.type = 'button';
       cancelBtn.addEventListener('click', () => {
         this.confirmingReset = false;
         this.render();
       });
-      const yesBtn = el('button', 'danger-btn', 'Confirmar exclusão');
+      const yesBtn = el('button', 'danger-btn', tr('panel.general.confirmErase', 'Confirmar exclusão'));
       yesBtn.type = 'button';
       yesBtn.addEventListener('click', () => this.resetAll());
       sec.append(confirmBox, actionRow([cancelBtn]), yesBtn);

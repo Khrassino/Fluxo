@@ -148,12 +148,17 @@ function normalizeTasksConfig(raw) {
 
 const TASK_MONTHS_SHORT = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
+const TASK_MONTHS_SHORT_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
 function formatShortDatePt(dateKey, todayKeyStr) {
   const dt = taskParseDateKey(dateKey);
   if (!dt) return '';
   const todayDt = taskParseDateKey(todayKeyStr || taskLocalDateKey());
   const sameYear = todayDt ? dt.getFullYear() === todayDt.getFullYear() : true;
-  const base = dt.getDate() + ' ' + TASK_MONTHS_SHORT[dt.getMonth()];
+  const isEn = typeof getLang === 'function' && getLang() === 'en';
+  const base = isEn
+    ? (TASK_MONTHS_SHORT_EN[dt.getMonth()] + ' ' + dt.getDate())
+    : (dt.getDate() + ' ' + TASK_MONTHS_SHORT[dt.getMonth()]);
   return sameYear ? base : (base + ' ' + String(dt.getFullYear()).slice(-2));
 }
 
@@ -166,11 +171,12 @@ function getDueInfo(dueDate, done, todayKeyStr) {
   const todayDt = taskParseDateKey(todayStr);
   const diffDays = Math.round((dueDt.getTime() - todayDt.getTime()) / 86400000);
   const shortDate = formatShortDatePt(key, todayStr);
+  const trFn = typeof tr === 'function' ? tr : ((_, fb) => fb);
 
   if (done) {
     return {
       status: 'done',
-      label: diffDays === 0 ? 'Para hoje' : shortDate,
+      label: diffDays === 0 ? trFn('tasks.due.forToday', 'Para hoje') : shortDate,
       diffDays,
       dateStr: key
     };
@@ -179,16 +185,18 @@ function getDueInfo(dueDate, done, todayKeyStr) {
     const late = Math.abs(diffDays);
     return {
       status: 'overdue',
-      label: late === 1 ? 'Venceu ontem' : ('Atrasada · ' + late + 'd'),
+      label: late === 1
+        ? trFn('tasks.due.yesterday', 'Venceu ontem')
+        : trFn('tasks.due.lateDays', 'Atrasada · ' + late + 'd', { d: late }),
       diffDays,
       dateStr: key
     };
   }
   if (diffDays === 0) {
-    return { status: 'today', label: 'Vence hoje', diffDays: 0, dateStr: key };
+    return { status: 'today', label: trFn('tasks.due.today', 'Vence hoje'), diffDays: 0, dateStr: key };
   }
   if (diffDays === 1) {
-    return { status: 'tomorrow', label: 'Amanhã', diffDays: 1, dateStr: key };
+    return { status: 'tomorrow', label: trFn('tasks.due.tomorrow', 'Amanhã'), diffDays: 1, dateStr: key };
   }
   return { status: 'upcoming', label: shortDate, diffDays, dateStr: key };
 }
@@ -222,7 +230,8 @@ function computeTaskStats(items, todayKeyStr) {
 
   const total = list.length;
   const percent = total > 0 ? Math.round((done / total) * 100) : 0;
-  const tags = Array.from(tagMap.values()).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const loc = typeof appLocale === 'function' ? appLocale() : 'pt-BR';
+  const tags = Array.from(tagMap.values()).sort((a, b) => a.localeCompare(b, loc));
   return { total, done, pending, overdue, dueToday, percent, tags };
 }
 
@@ -249,7 +258,8 @@ function filterAndSortTasks(items, opts, todayKeyStr) {
     }
 
     if (q) {
-      const pLabel = (TASK_PRIORITIES.find(p => p.id === (it.priority || 'none')) || {}).label || '';
+      const pDef = TASK_PRIORITIES.find(p => p.id === (it.priority || 'none')) || {};
+      const pLabel = typeof tr === 'function' ? tr('tasks.prio.' + (it.priority || 'none'), pDef.label || '') : (pDef.label || '');
       const subTxt = Array.isArray(it.subtasks) ? it.subtasks.map(s => s && s.text ? s.text : '').join(' ') : '';
       const hay = taskNormalizeText([
         it.text,
@@ -292,7 +302,8 @@ function filterAndSortTasks(items, opts, todayKeyStr) {
     }
 
     if (sort === 'alpha') {
-      return (a.text || '').localeCompare(b.text || '', 'pt-BR');
+      const loc = typeof appLocale === 'function' ? appLocale() : 'pt-BR';
+      return (a.text || '').localeCompare(b.text || '', loc);
     }
 
     if (sort === 'oldest') {

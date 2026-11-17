@@ -82,6 +82,51 @@ function wsEscape(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+function wsTr(key, params, fallback) {
+  if (typeof t === 'function') return t(key, params, fallback);
+  let str = String(fallback != null ? fallback : key);
+  if (params && typeof params === 'object') {
+    for (const [k, v] of Object.entries(params)) {
+      str = str.replace(new RegExp('\\{' + k + '\\}', 'g'), String(v));
+    }
+  }
+  return str;
+}
+
+const WS_COLOR_KEY_BY_LABEL = {
+  'Padrão': 'default', 'Tema': 'theme', 'Azul': 'blue', 'Menta': 'mint',
+  'Âmbar': 'amber', 'Rosa': 'rose', 'Lilás': 'violet', 'Amarelo': 'yellow',
+  'Verde': 'green', 'Laranja': 'orange', 'Neve': 'snow', 'Grafite': 'slate', 'Coral': 'coral'
+};
+
+function wsColorLabel(item) {
+  if (!item) return '';
+  const id = item.id != null ? String(item.id) : '';
+  const mapById = { '': item.label === 'Tema' ? 'theme' : 'default', blue: 'blue', mint: 'mint', amber: 'amber', rose: 'rose', violet: 'violet', yellow: 'yellow', green: 'green', pink: 'pink', orange: 'orange', snow: 'snow', slate: 'slate', coral: 'coral', lilac: 'lilac' };
+  const keyPart = mapById[id] || WS_COLOR_KEY_BY_LABEL[item.label] || '';
+  return keyPart ? wsTr('ws.color.' + keyPart, null, item.label) : (item.label || '');
+}
+
+const WS_BG_PATTERN_OPTS = [
+  { id: 'dots', key: 'ws.bg.dots', def: 'Pontos' },
+  { id: 'lines', key: 'ws.bg.lines', def: 'Linhas' },
+  { id: 'grid', key: 'ws.bg.grid', def: 'Grade' },
+  { id: 'cross', key: 'ws.bg.cross', def: 'Cruzes' },
+  { id: 'none', key: 'ws.bg.none', def: 'Liso' }
+];
+
+const WS_ARROW_CAP_OPTS = [
+  { id: 'auto', key: 'ws.arrow.capAuto', def: 'Auto' },
+  { id: 'none', key: 'ws.arrow.capNone', def: 'Sem' },
+  { id: 'arrow', key: 'ws.arrow.capArrow', def: 'Seta' },
+  { id: 'circle', key: 'ws.arrow.capCircle', def: 'Círculo' },
+  { id: 'circle-open', key: 'ws.arrow.capCircleOpen', def: 'Círculo vazado' },
+  { id: 'square', key: 'ws.arrow.capSquare', def: 'Quadrado' },
+  { id: 'square-open', key: 'ws.arrow.capSquareOpen', def: 'Quadrado vazado' },
+  { id: 'diamond', key: 'ws.arrow.capDiamond', def: 'Losango' },
+  { id: 'bar', key: 'ws.arrow.capBar', def: 'Barra' }
+];
+
 /* ============ banco próprio do quadro ============ */
 const WorkspaceDB = {
   db: null,
@@ -300,7 +345,7 @@ const Workspace = {
   defaultBoard() {
     return {
       v: 1,
-      bg: { color: '', image: false },
+      bg: { color: '', image: false, pattern: 'dots' },
       cursor: WS_CURSOR_DEFAULT,
       view: { x: 0, y: 0, scale: 1 },
       cards: [],
@@ -328,6 +373,7 @@ const Workspace = {
     b.bg = Object.assign({}, def.bg, raw.bg || {});
     b.bg.color = wsColor(b.bg.color, '');
     b.bg.image = !!b.bg.image;
+    b.bg.pattern = typeof wsNormalizeBgPattern === 'function' ? wsNormalizeBgPattern(b.bg.pattern) : 'dots';
     b.cursor = wsNormCursor(raw.cursor);
 
     const view = raw.view || {};
@@ -475,8 +521,9 @@ const Workspace = {
   },
 
   currentWsEntry() {
-    if (!this.wsIndex || !Array.isArray(this.wsIndex.items)) return { id: this.activeWsId, name: 'Quadro principal' };
-    return this.wsIndex.items.find(it => it.id === this.activeWsId) || this.wsIndex.items[0] || { id: this.activeWsId, name: 'Quadro principal' };
+    const defName = wsTr('ws.defaultBoard', null, 'Quadro principal');
+    if (!this.wsIndex || !Array.isArray(this.wsIndex.items)) return { id: this.activeWsId, name: defName };
+    return this.wsIndex.items.find(it => it.id === this.activeWsId) || this.wsIndex.items[0] || { id: this.activeWsId, name: defName };
   },
 
   async loadBgFor(wsId) {
@@ -552,7 +599,7 @@ const Workspace = {
       WorkspaceDB.setMeta(idxKey, this.wsIndex).catch(() => {});
     }
     return WorkspaceDB.setMeta(key, this.board).catch(() => {
-      toast('Não foi possível salvar o quadro', 'close');
+      toast(wsTr('ws.saveErr', null, 'Não foi possível salvar o quadro'), 'close');
     });
   },
 
@@ -662,74 +709,80 @@ const Workspace = {
     const box = this.els.empty;
     box.innerHTML =
       '<div class="ws-empty-icon">' + svgIcon('board') + '</div>' +
-      '<p>Seu quadro está em branco</p>' +
-      '<small>Crie notas, conceitos com #tags, checklists, grupos, solte PDFs, cole prints (Ctrl+V) e ligue ideias.</small>' +
+      '<p>' + wsEscape(wsTr('ws.emptyTitle2', null, 'Seu quadro está em branco')) + '</p>' +
+      '<small>' + wsEscape(wsTr('ws.emptySub2', null, 'Crie notas, conceitos com #tags, checklists, grupos, solte PDFs, cole prints (Ctrl+V) e ligue ideias.')) + '</small>' +
       '<div class="ws-empty-actions">' +
-        '<button class="ws-empty-btn primary" data-empty="card">' + svgIcon('plus') + '<span>Nova nota</span></button>' +
-        '<button class="ws-empty-btn" data-empty="concept">' + svgIcon('hash') + '<span>Conceito</span></button>' +
-        '<button class="ws-empty-btn" data-empty="checklist">' + svgIcon('checklist') + '<span>Checklist</span></button>' +
-        '<button class="ws-empty-btn" data-empty="draw">' + svgIcon('pen') + '<span>Escrever</span></button>' +
-        '<button class="ws-empty-btn" data-empty="pdf">' + svgIcon('file') + '<span>PDF</span></button>' +
-        '<button class="ws-empty-btn" data-empty="img">' + svgIcon('image') + '<span>Imagem</span></button>' +
+        '<button class="ws-empty-btn primary" data-empty="card">' + svgIcon('plus') + '<span>' + wsEscape(wsTr('ws.emptyNote', null, 'Nova nota')) + '</span></button>' +
+        '<button class="ws-empty-btn" data-empty="concept">' + svgIcon('hash') + '<span>' + wsEscape(wsTr('ws.addConcept', null, 'Conceito')) + '</span></button>' +
+        '<button class="ws-empty-btn" data-empty="checklist">' + svgIcon('checklist') + '<span>' + wsEscape(wsTr('ws.addChecklist', null, 'Checklist')) + '</span></button>' +
+        '<button class="ws-empty-btn" data-empty="draw">' + svgIcon('pen') + '<span>' + wsEscape(wsTr('ws.emptyDraw', null, 'Escrever')) + '</span></button>' +
+        '<button class="ws-empty-btn" data-empty="pdf">' + svgIcon('file') + '<span>' + wsEscape(wsTr('ws.addPdf', null, 'PDF')) + '</span></button>' +
+        '<button class="ws-empty-btn" data-empty="img">' + svgIcon('image') + '<span>' + wsEscape(wsTr('ws.addImage', null, 'Imagem')) + '</span></button>' +
       '</div>';
-    box.addEventListener('click', (e) => {
-      const b = e.target.closest('[data-empty]');
-      if (!b) return;
-      const act = b.dataset.empty;
-      if (act === 'card') this.addNote();
-      else if (act === 'concept') this.addConcept();
-      else if (act === 'checklist') this.addChecklist();
-      else if (act === 'draw') this.setDrawMode(true);
-      else if (act === 'pdf') this.els.filePdf.click();
-      else if (act === 'img') this.els.fileImg.click();
-      else this.openBgPopover();
-    });
+    if (!box._wsBound) {
+      box._wsBound = true;
+      box.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-empty]');
+        if (!b) return;
+        const act = b.dataset.empty;
+        if (act === 'card') this.addNote();
+        else if (act === 'concept') this.addConcept();
+        else if (act === 'checklist') this.addChecklist();
+        else if (act === 'draw') this.setDrawMode(true);
+        else if (act === 'pdf') this.els.filePdf.click();
+        else if (act === 'img') this.els.fileImg.click();
+        else this.openBgPopover();
+      });
+    }
   },
 
   buildTopbar() {
     const bar = this.els.topbar;
     bar.innerHTML =
-      '<button type="button" class="ws-brand" data-act="boards" title="Trocar de área de trabalho, criar nova ou salvar/abrir arquivo (.fluxo)" aria-label="Áreas de trabalho">' +
+      '<button type="button" class="ws-brand" data-act="boards" title="' + wsEscape(wsTr('ws.brandTitle', null, 'Trocar de área de trabalho, criar nova ou salvar/abrir arquivo (.fluxo)')) + '" aria-label="' + wsEscape(wsTr('ws.brandAria', null, 'Áreas de trabalho')) + '">' +
         '<span class="ws-brand-icon">' + svgIcon('board') + '</span>' +
-        '<div class="ws-brand-text"><b id="ws-brand-name">Quadro principal</b><small id="ws-brand-meta">Área de Trabalho · 1/5</small></div>' +
+        '<div class="ws-brand-text"><b id="ws-brand-name">' + wsEscape(wsTr('ws.defaultBoard', null, 'Quadro principal')) + '</b><small id="ws-brand-meta">' + wsEscape(wsTr('ws.brandMeta', { cur: 1, max: 5 }, 'Áreas · 1/5')) + '</small></div>' +
         '<span class="ws-brand-chev">' + svgIcon('chevD') + '</span>' +
       '</button>' +
-      '<div class="ws-actions" role="toolbar" aria-label="Ferramentas do quadro">' +
-        '<button class="ws-tool wide" data-act="select" title="Quadrado de seleção (arraste ou Shift+arraste · V)">' + svgIcon('cursor') + '<span>Selecionar</span></button>' +
-        '<button class="ws-tool wide" data-act="add" title="Adicionar nota, conceito, checklist ou grupo">' + svgIcon('plus') + '<span>Novo</span></button>' +
-        '<button class="ws-tool wide" data-act="draw" title="Escrever ou desenhar livremente (D)">' + svgIcon('pen') + '<span>Escrever</span></button>' +
-        '<button class="ws-tool wide" data-act="pdf" title="Adicionar PDF">' + svgIcon('file') + '<span>PDF</span></button>' +
-        '<button class="ws-tool wide" data-act="img" title="Adicionar imagem ou print (ou Ctrl+V)">' + svgIcon('image') + '<span>Imagem</span></button>' +
-        '<button class="ws-tool wide" data-act="link" title="Ligar dois cartões">' + svgIcon('arrow') + '<span>Ligar</span></button>' +
+      '<div class="ws-actions" role="toolbar" aria-label="' + wsEscape(wsTr('ws.toolbarAria', null, 'Ferramentas do quadro')) + '">' +
+        '<button class="ws-tool wide" data-act="select" title="' + wsEscape(wsTr('ws.selectTitle', null, 'Quadrado de seleção (arraste ou Shift+arraste · V)')) + '">' + svgIcon('cursor') + '<span>' + wsEscape(wsTr('ws.select', null, 'Selecionar')) + '</span></button>' +
+        '<button class="ws-tool wide" data-act="add" title="' + wsEscape(wsTr('ws.newTitle', null, 'Adicionar nota, conceito, checklist ou grupo')) + '">' + svgIcon('plus') + '<span>' + wsEscape(wsTr('ws.newBtn', null, 'Novo')) + '</span></button>' +
+        '<button class="ws-tool wide" data-act="draw" title="' + wsEscape(wsTr('ws.drawTitle', null, 'Escrever ou desenhar livremente (D)')) + '">' + svgIcon('pen') + '<span>' + wsEscape(wsTr('ws.emptyDraw', null, 'Escrever')) + '</span></button>' +
+        '<button class="ws-tool wide" data-act="pdf" title="' + wsEscape(wsTr('ws.pdfTitle', null, 'Adicionar PDF')) + '">' + svgIcon('file') + '<span>' + wsEscape(wsTr('ws.addPdf', null, 'PDF')) + '</span></button>' +
+        '<button class="ws-tool wide" data-act="img" title="' + wsEscape(wsTr('ws.imgTitle', null, 'Adicionar imagem ou print (ou Ctrl+V)')) + '">' + svgIcon('image') + '<span>' + wsEscape(wsTr('ws.addImage', null, 'Imagem')) + '</span></button>' +
+        '<button class="ws-tool wide" data-act="link" title="' + wsEscape(wsTr('ws.linkTitle', null, 'Ligar dois cartões')) + '">' + svgIcon('arrow') + '<span>' + wsEscape(wsTr('ws.link', null, 'Ligar')) + '</span></button>' +
         '<span class="ws-tool-sep"></span>' +
-        '<button class="ws-tool wide" data-act="search" title="Buscar no quadro e nos PDFs (Ctrl+F)">' + svgIcon('search') + '<span>Buscar</span></button>' +
-        '<button class="ws-tool" data-act="bg" title="Fundo do quadro">' + svgIcon('palette') + '</button>' +
-        '<button class="ws-tool" data-act="timer" title="Mostrar ou ocultar o cronômetro">' + svgIcon('timer') + '</button>' +
-        '<button class="ws-tool" data-act="fit" title="Ajustar o quadro à tela">' + svgIcon('fit') + '</button>' +
+        '<button class="ws-tool wide" data-act="search" title="' + wsEscape(wsTr('ws.searchTitle', null, 'Buscar no quadro e nos PDFs (Ctrl+F)')) + '">' + svgIcon('search') + '<span>' + wsEscape(wsTr('ws.searchBtn', null, 'Buscar')) + '</span></button>' +
+        '<button class="ws-tool" data-act="bg" title="' + wsEscape(wsTr('ws.bgTitle', null, 'Fundo do quadro')) + '">' + svgIcon('palette') + '</button>' +
+        '<button class="ws-tool" data-act="timer" title="' + wsEscape(wsTr('ws.timerTitle', null, 'Mostrar ou ocultar o cronômetro')) + '">' + svgIcon('timer') + '</button>' +
+        '<button class="ws-tool" data-act="fit" title="' + wsEscape(wsTr('ws.fitTitle', null, 'Ajustar o quadro à tela')) + '">' + svgIcon('fit') + '</button>' +
         '<span class="ws-tool-sep"></span>' +
-        '<button class="ws-tool" data-act="export" title="Salvar área de trabalho como arquivo (.fluxo)" aria-label="Salvar arquivo">' + svgIcon('download') + '</button>' +
-        '<button class="ws-tool" data-act="import" title="Abrir arquivo de área de trabalho (.fluxo)" aria-label="Abrir arquivo">' + svgIcon('folder') + '</button>' +
+        '<button class="ws-tool" data-act="export" title="' + wsEscape(wsTr('ws.exportTitle', null, 'Salvar área de trabalho como arquivo (.fluxo)')) + '" aria-label="' + wsEscape(wsTr('ws.boards.saveFile', null, 'Salvar arquivo')) + '">' + svgIcon('download') + '</button>' +
+        '<button class="ws-tool" data-act="import" title="' + wsEscape(wsTr('ws.importTitle', null, 'Abrir arquivo de área de trabalho (.fluxo)')) + '" aria-label="' + wsEscape(wsTr('ws.boards.openFile', null, 'Abrir arquivo')) + '">' + svgIcon('folder') + '</button>' +
       '</div>';
-    bar.addEventListener('click', (e) => {
-      const b = e.target.closest('[data-act]');
-      if (!b) return;
-      if (typeof b.blur === 'function') b.blur();
-      const act = b.dataset.act;
-      if (act === 'boards') this.openBoardsPopover();
-      else if (act === 'select') this.setSelectMode(!this.selectMode);
-      else if (act === 'add') this.openAddPopover();
-      else if (act === 'card') this.addNote();
-      else if (act === 'draw') this.setDrawMode(!this.drawMode);
-      else if (act === 'pdf') this.els.filePdf.click();
-      else if (act === 'img') this.els.fileImg.click();
-      else if (act === 'link') this.beginLink();
-      else if (act === 'search') this.openSearchPopover();
-      else if (act === 'bg') this.openBgPopover();
-      else if (act === 'timer') this.toggleTimerVisible();
-      else if (act === 'fit') this.fitView();
-      else if (act === 'export') this.exportWorkspaceFile();
-      else if (act === 'import') this.els.fileImport && this.els.fileImport.click();
-    });
+    if (!bar._wsBound) {
+      bar._wsBound = true;
+      bar.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-act]');
+        if (!b) return;
+        if (typeof b.blur === 'function') b.blur();
+        const act = b.dataset.act;
+        if (act === 'boards') this.openBoardsPopover();
+        else if (act === 'select') this.setSelectMode(!this.selectMode);
+        else if (act === 'add') this.openAddPopover();
+        else if (act === 'card') this.addNote();
+        else if (act === 'draw') this.setDrawMode(!this.drawMode);
+        else if (act === 'pdf') this.els.filePdf.click();
+        else if (act === 'img') this.els.fileImg.click();
+        else if (act === 'link') this.beginLink();
+        else if (act === 'search') this.openSearchPopover();
+        else if (act === 'bg') this.openBgPopover();
+        else if (act === 'timer') this.toggleTimerVisible();
+        else if (act === 'fit') this.fitView();
+        else if (act === 'export') this.exportWorkspaceFile();
+        else if (act === 'import') this.els.fileImport && this.els.fileImport.click();
+      });
+    }
     this.updateTopbar();
   },
 
@@ -756,39 +809,42 @@ const Workspace = {
     if (brand) brand.classList.toggle('active', this.popover === 'boards');
     const nameEl = this.els.topbar.querySelector('#ws-brand-name');
     const metaEl = this.els.topbar.querySelector('#ws-brand-meta');
-    if (nameEl) nameEl.textContent = this.currentWsEntry().name || 'Quadro principal';
+    if (nameEl) nameEl.textContent = this.currentWsEntry().name || wsTr('ws.defaultBoard', null, 'Quadro principal');
     if (metaEl) {
       const total = (this.wsIndex && this.wsIndex.items ? this.wsIndex.items.length : 1);
       const max = typeof WS_MAX_WORKSPACES !== 'undefined' ? WS_MAX_WORKSPACES : 5;
-      metaEl.textContent = 'Áreas · ' + total + '/' + max;
+      metaEl.textContent = wsTr('ws.brandMeta', { cur: total, max }, 'Áreas · ' + total + '/' + max);
     }
   },
 
   updateHint() {
     if (!this.els.hint) return;
     if (this.drawMode) {
-      this.els.hint.textContent = 'escreva livremente · segure Espaço ou Alt para arrastar · dois dedos movem · Ctrl+Z desfaz · Esc sai';
+      this.els.hint.textContent = wsTr('ws.hintDraw', null, 'escreva livremente · segure Espaço ou Alt para arrastar · dois dedos movem · Ctrl+Z desfaz · Esc sai');
     } else if (this.selectMode) {
-      this.els.hint.textContent = 'arraste para fazer o quadrado de seleção · Shift adiciona · segure Espaço para mover · Ctrl+A seleciona tudo · Esc sai';
+      this.els.hint.textContent = wsTr('ws.hintSelect', null, 'arraste para fazer o quadrado de seleção · Shift adiciona · segure Espaço para mover · Ctrl+A seleciona tudo · Esc sai');
     } else {
-      this.els.hint.textContent = 'arraste o fundo para mover · Shift+arraste ou Selecionar (V) faz quadrado de seleção · Ctrl+A seleciona tudo';
+      this.els.hint.textContent = wsTr('ws.hintDefault', null, 'arraste o fundo para mover · Shift+arraste ou Selecionar (V) faz seleção · Shift ao mover/redimensionar alinha ao grid · Ctrl+A seleciona tudo');
     }
   },
 
   buildZoom() {
     const z = this.els.zoom;
     z.innerHTML =
-      '<button class="ws-zoom-btn" data-z="in" title="Aproximar">+</button>' +
+      '<button class="ws-zoom-btn" data-z="in" title="' + wsEscape(wsTr('ws.zoomIn', null, 'Aproximar')) + '">+</button>' +
       '<div class="ws-zoom-level">100%</div>' +
-      '<button class="ws-zoom-btn" data-z="out" title="Afastar">−</button>' +
-      '<button class="ws-zoom-btn" data-z="fit" title="Ajustar à tela">' + svgIcon('fit') + '</button>';
-    z.addEventListener('click', (e) => {
-      const b = e.target.closest('[data-z]');
-      if (!b) return;
-      if (b.dataset.z === 'in') this.zoomAt(null, null, 1.2);
-      else if (b.dataset.z === 'out') this.zoomAt(null, null, 1 / 1.2);
-      else this.fitView();
-    });
+      '<button class="ws-zoom-btn" data-z="out" title="' + wsEscape(wsTr('ws.zoomOut', null, 'Afastar')) + '">−</button>' +
+      '<button class="ws-zoom-btn" data-z="fit" title="' + wsEscape(wsTr('ws.zoomFit', null, 'Ajustar à tela')) + '">' + svgIcon('fit') + '</button>';
+    if (!z._wsBound) {
+      z._wsBound = true;
+      z.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-z]');
+        if (!b) return;
+        if (b.dataset.z === 'in') this.zoomAt(null, null, 1.2);
+        else if (b.dataset.z === 'out') this.zoomAt(null, null, 1 / 1.2);
+        else this.fitView();
+      });
+    }
   },
 
   /* -------- visão: pan, zoom, ajuste -------- */
@@ -871,13 +927,17 @@ const Workspace = {
   applyBg() {
     const vp = this.els.viewport;
     const bg = this.board.bg;
+    const pattern = typeof wsNormalizeBgPattern === 'function' ? wsNormalizeBgPattern(bg.pattern) : (bg.pattern || 'dots');
+    vp.dataset.bgPattern = pattern;
     if (bg.image && this.bgUrl) {
       vp.style.backgroundImage = 'url("' + this.bgUrl + '")';
       vp.style.backgroundSize = 'cover';
       vp.style.backgroundPosition = 'center';
       vp.style.backgroundColor = bg.color || 'var(--bg)';
     } else {
-      vp.style.backgroundImage = 'none';
+      vp.style.backgroundImage = '';
+      vp.style.backgroundSize = '';
+      vp.style.backgroundPosition = '';
       vp.style.backgroundColor = bg.color || 'var(--bg)';
     }
   },
@@ -890,6 +950,13 @@ const Workspace = {
     this.els.shell.style.setProperty('--ws-cursor-grabbing', closed);
     this.els.shell.style.setProperty('--ws-cursor-pointer', pointer);
     this.els.viewport.style.cursor = open;
+  },
+
+  setBgPattern(pattern, keepOpen) {
+    this.board.bg.pattern = typeof wsNormalizeBgPattern === 'function' ? wsNormalizeBgPattern(pattern) : pattern;
+    this.applyBg();
+    this.scheduleSave();
+    if (keepOpen) this.refreshBgPopover();
   },
 
   setBgColor(color, keepOpen) {
@@ -918,7 +985,7 @@ const Workspace = {
   async setBgImageFile(file) {
     if (!file || !/^image\//.test(file.type)) return;
     if (file.size > 10 * 1024 * 1024) {
-      toast('Imagem muito grande — use até 10 MB', 'image');
+      toast(wsTr('ws.bgTooBig', null, 'Imagem muito grande — use até 10 MB'), 'image');
       return;
     }
     try {
@@ -929,9 +996,9 @@ const Workspace = {
       this.applyBg();
       this.scheduleSave();
       this.refreshBgPopover();
-      toast('Fundo atualizado', 'image');
+      toast(wsTr('ws.bgUpdated', null, 'Fundo atualizado'), 'image');
     } catch (e) {
-      toast('Não foi possível salvar a imagem', 'close');
+      toast(wsTr('ws.bgSaveErr', null, 'Não foi possível salvar a imagem'), 'close');
     }
   },
 
@@ -1035,7 +1102,8 @@ const Workspace = {
     await this.flushSave();
     const res = wsCreateWorkspaceEntry(this.wsIndex, name, 'ws_' + uid(), Date.now());
     if (!res.ok) {
-      toast('Limite de ' + (typeof WS_MAX_WORKSPACES !== 'undefined' ? WS_MAX_WORKSPACES : 5) + ' áreas atingido para manter a otimização', 'board');
+      const maxWs = typeof WS_MAX_WORKSPACES !== 'undefined' ? WS_MAX_WORKSPACES : 5;
+      toast(wsTr('ws.boards.limitPh', { max: maxWs }, 'Limite de ' + maxWs + ' áreas atingido'), 'board');
       this.refreshBoardsPopover();
       return;
     }
@@ -1064,7 +1132,7 @@ const Workspace = {
     this.renderTimer();
     this.updateEmpty();
     this.updateTopbar();
-    toast('Área "' + res.entry.name + '" criada', 'board');
+    toast(wsTr('ws.boards.created', { name: res.entry.name }, 'Área "' + res.entry.name + '" criada'), 'board');
   },
 
   async renameWorkspace(id, newName) {
@@ -1100,15 +1168,15 @@ const Workspace = {
   async deleteWorkspace(id) {
     if (typeof wsDeleteWorkspaceEntry !== 'function') return;
     if (!this.wsIndex || this.wsIndex.items.length <= 1) {
-      toast('Mantenha ao menos 1 área de trabalho', 'board');
+      toast(wsTr('ws.boards.keepOne', null, 'Mantenha ao menos 1 área de trabalho'), 'board');
       return;
     }
     const entry = this.wsIndex.items.find(it => it.id === id);
     if (!entry) return;
     const ok = await this.openConfirm({
-      title: 'Excluir "' + entry.name + '"?',
-      message: 'Os cartões, PDFs, imagens e desenhos desta área serão removidos do navegador.',
-      confirmLabel: 'Excluir área',
+      title: wsTr('ws.boards.delTitle', { name: entry.name }, 'Excluir "' + entry.name + '"?'),
+      message: wsTr('ws.boards.delMsg', null, 'Os cartões, PDFs, imagens e desenhos desta área serão removidos do navegador.'),
+      confirmLabel: wsTr('ws.boards.delConfirm', null, 'Excluir área'),
       danger: true
     });
     if (!ok) return;
@@ -1145,7 +1213,7 @@ const Workspace = {
     }
     this.updateTopbar();
     this.openBoardsPopover();
-    toast('Área excluída', 'trash');
+    toast(wsTr('ws.boards.deleted', null, 'Área excluída'), 'trash');
   },
 
   async exportWorkspaceFile() {
@@ -1189,19 +1257,19 @@ const Workspace = {
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(objUrl), 1500);
-    toast('Área salva em ' + filename, 'download');
+    toast(wsTr('ws.boards.savedIn', { file: filename }, 'Área salva em ' + filename), 'download');
   },
 
   async importWorkspaceFile(file) {
     if (!file || typeof parseWorkspaceImportBundle !== 'function' || typeof remapWorkspaceBundle !== 'function') return;
     let text = '';
     try { text = await file.text(); }
-    catch (e) { toast('Não foi possível ler o arquivo selecionado', 'close'); return; }
+    catch (e) { toast(wsTr('ws.boards.readErr', null, 'Não foi possível ler o arquivo selecionado'), 'close'); return; }
 
     const fallbackName = String(file.name || '').replace(/\.(fluxo|json)$/i, '');
     const parsed = parseWorkspaceImportBundle(text, fallbackName);
     if (!parsed.ok) {
-      toast(parsed.error || 'Arquivo inválido', 'close');
+      toast(parsed.error || wsTr('ws.boards.invalidFile', null, 'Arquivo inválido'), 'close');
       return;
     }
 
@@ -1220,11 +1288,11 @@ const Workspace = {
       this.wsIndex = created.index;
       targetId = created.entry.id;
     } else {
-      const curName = this.currentWsEntry().name || 'atual';
+      const curName = this.currentWsEntry().name || '';
       const ok = await this.openConfirm({
-        title: 'Limite de ' + maxWs + ' áreas atingido',
-        message: 'Substituir o quadro atual ("' + curName + '") pelo arquivo "' + remapped.name + '"?',
-        confirmLabel: 'Substituir quadro',
+        title: wsTr('ws.boards.replaceTitle', { max: maxWs }, 'Limite de ' + maxWs + ' áreas atingido'),
+        message: wsTr('ws.boards.replaceMsg', { cur: curName, next: remapped.name }, 'Substituir o quadro atual ("' + curName + '") pelo arquivo "' + remapped.name + '"?'),
+        confirmLabel: wsTr('ws.boards.replaceConfirm', null, 'Substituir quadro'),
         danger: true
       });
       if (!ok) return;
@@ -1271,7 +1339,7 @@ const Workspace = {
     this.updateEmpty();
     this.updateTopbar();
     setTimeout(() => this.refreshPdfs(), 40);
-    toast((replacing ? 'Quadro substituído: ' : 'Área aberta: ') + remapped.name, 'folder');
+    toast(wsTr(replacing ? 'ws.boards.replaced' : 'ws.boards.opened', { name: remapped.name }, (replacing ? 'Quadro substituído: ' : 'Área aberta: ') + remapped.name), 'folder');
   },
 
   refreshBoardsPopover() {
@@ -1288,7 +1356,7 @@ const Workspace = {
     this.popover = 'boards';
     this.updateTopbar();
 
-    const idx = this.wsIndex || { activeId: this.activeWsId, items: [{ id: this.activeWsId, name: 'Quadro principal' }] };
+    const idx = this.wsIndex || { activeId: this.activeWsId, items: [{ id: this.activeWsId, name: wsTr('ws.defaultBoard', null, 'Quadro principal') }] };
     const maxWs = typeof WS_MAX_WORKSPACES !== 'undefined' ? WS_MAX_WORKSPACES : 5;
     const atLimit = idx.items.length >= maxWs;
     const onlyOne = idx.items.length <= 1;
@@ -1297,18 +1365,20 @@ const Workspace = {
       const active = it.id === this.activeWsId;
       if (this.editingWsId === it.id) {
         return '<div class="ws-board-row' + (active ? ' active' : '') + '">' +
-          '<input type="text" class="ws-board-rename" data-wsinput="' + wsEscape(it.id) + '" value="' + wsEscape(it.name) + '" maxlength="42" aria-label="Nome da área">' +
-          '<button type="button" class="ws-board-act" data-wssave="' + wsEscape(it.id) + '" title="Salvar nome" aria-label="Salvar nome">' + svgIcon('check') + '</button>' +
+          '<input type="text" class="ws-board-rename" data-wsinput="' + wsEscape(it.id) + '" value="' + wsEscape(it.name) + '" maxlength="42" aria-label="' + wsEscape(wsTr('ws.boards.nameAria', null, 'Nome da área')) + '">' +
+          '<button type="button" class="ws-board-act" data-wssave="' + wsEscape(it.id) + '" title="' + wsEscape(wsTr('ws.boards.saveName', null, 'Salvar nome')) + '" aria-label="' + wsEscape(wsTr('ws.boards.saveName', null, 'Salvar nome')) + '">' + svgIcon('check') + '</button>' +
         '</div>';
       }
+      const renTip = wsTr('ws.boards.rename', null, 'Renomear') + ' ' + it.name;
+      const delTip = onlyOne ? wsTr('ws.boards.keepOne', null, 'Mantenha ao menos 1 área') : (wsTr('ws.boards.delete', null, 'Excluir') + ' ' + it.name);
       return '<div class="ws-board-row' + (active ? ' active' : '') + '">' +
         '<button type="button" class="ws-board-switch" data-wsid="' + wsEscape(it.id) + '">' +
           '<span class="ws-board-dot"></span>' +
           '<span class="ws-board-name">' + wsEscape(it.name) + '</span>' +
         '</button>' +
         '<div class="ws-board-acts">' +
-          '<button type="button" class="ws-board-act" data-wsrename="' + wsEscape(it.id) + '" title="Renomear ' + wsEscape(it.name) + '" aria-label="Renomear ' + wsEscape(it.name) + '">' + svgIcon('pencil') + '</button>' +
-          '<button type="button" class="ws-board-act danger" data-wsdel="' + wsEscape(it.id) + '"' + (onlyOne ? ' disabled title="Mantenha ao menos 1 área"' : ' title="Excluir ' + wsEscape(it.name) + '"') + ' aria-label="Excluir ' + wsEscape(it.name) + '">' + svgIcon('trash') + '</button>' +
+          '<button type="button" class="ws-board-act" data-wsrename="' + wsEscape(it.id) + '" title="' + wsEscape(renTip) + '" aria-label="' + wsEscape(renTip) + '">' + svgIcon('pencil') + '</button>' +
+          '<button type="button" class="ws-board-act danger" data-wsdel="' + wsEscape(it.id) + '"' + (onlyOne ? ' disabled' : '') + ' title="' + wsEscape(delTip) + '" aria-label="' + wsEscape(delTip) + '">' + svgIcon('trash') + '</button>' +
         '</div>' +
       '</div>';
     }).join('');
@@ -1316,19 +1386,19 @@ const Workspace = {
     const html =
       '<div class="ws-popover left">' +
         '<div class="ws-pop-head">' +
-          '<p class="ws-pop-title">Áreas de trabalho</p>' +
+          '<p class="ws-pop-title">' + wsEscape(wsTr('ws.boards.title', null, 'Áreas de trabalho')) + '</p>' +
           '<span class="ws-pop-quota' + (atLimit ? ' full' : '') + '" data-testid="ws-quota">' + idx.items.length + '/' + maxWs + '</span>' +
         '</div>' +
         '<div class="ws-boards-list">' + listHtml + '</div>' +
         '<form class="ws-create-form" data-wsnewform>' +
-          '<input type="text" class="ws-create-input" data-wsnewname placeholder="' + (atLimit ? 'Limite de ' + maxWs + ' áreas atingido' : 'Nome da nova área…') + '" maxlength="42"' + (atLimit ? ' disabled' : '') + '>' +
-          '<button type="submit" class="ws-create-btn"' + (atLimit ? ' disabled' : '') + '>' + svgIcon('plus') + '<span>Nova</span></button>' +
+          '<input type="text" class="ws-create-input" data-wsnewname placeholder="' + wsEscape(atLimit ? wsTr('ws.boards.limitPh', { max: maxWs }, 'Limite de ' + maxWs + ' áreas atingido') : wsTr('ws.boards.namePlaceholder', null, 'Nome da nova área…')) + '" maxlength="42"' + (atLimit ? ' disabled' : '') + '>' +
+          '<button type="submit" class="ws-create-btn"' + (atLimit ? ' disabled' : '') + '>' + svgIcon('plus') + '<span>' + wsEscape(wsTr('ws.boards.newBtn', null, 'Nova')) + '</span></button>' +
         '</form>' +
-        '<p class="ws-pop-note">Limite de ' + maxWs + ' áreas simultâneas para manter o navegador leve e responsivo.</p>' +
-        '<div class="ws-pop-sub">Arquivo externo (.fluxo)</div>' +
+        '<p class="ws-pop-note">' + wsEscape(wsTr('ws.boards.limitNote', { max: maxWs }, 'Limite de ' + maxWs + ' áreas simultâneas para manter o navegador leve e responsivo.')) + '</p>' +
+        '<div class="ws-pop-sub">' + wsEscape(wsTr('ws.boards.extFile', null, 'Arquivo externo (.fluxo)')) + '</div>' +
         '<div class="ws-io-grid">' +
-          '<button type="button" class="ws-io-btn" data-wsexport>' + svgIcon('download') + '<span>Salvar arquivo</span></button>' +
-          '<button type="button" class="ws-io-btn" data-wsimport>' + svgIcon('folder') + '<span>Abrir arquivo</span></button>' +
+          '<button type="button" class="ws-io-btn" data-wsexport>' + svgIcon('download') + '<span>' + wsEscape(wsTr('ws.boards.saveFile', null, 'Salvar arquivo')) + '</span></button>' +
+          '<button type="button" class="ws-io-btn" data-wsimport>' + svgIcon('folder') + '<span>' + wsEscape(wsTr('ws.boards.openFile', null, 'Abrir arquivo')) + '</span></button>' +
         '</div>' +
       '</div>';
 
@@ -1434,11 +1504,11 @@ const Workspace = {
       dialog.setAttribute('role', 'dialog');
       dialog.setAttribute('aria-modal', 'true');
       dialog.innerHTML =
-        '<h3>' + wsEscape(opts.title || 'Confirmar') + '</h3>' +
+        '<h3>' + wsEscape(opts.title || wsTr('ws.confirmTitle', null, 'Confirmar')) + '</h3>' +
         (opts.message ? '<p>' + wsEscape(opts.message) + '</p>' : '') +
         '<div class="ws-confirm-actions">' +
-          '<button type="button" class="ws-confirm-btn" data-confirm="cancel">' + wsEscape(opts.cancelLabel || 'Cancelar') + '</button>' +
-          '<button type="button" class="ws-confirm-btn ' + (opts.danger ? 'danger' : 'primary') + '" data-confirm="ok">' + wsEscape(opts.confirmLabel || 'Confirmar') + '</button>' +
+          '<button type="button" class="ws-confirm-btn" data-confirm="cancel">' + wsEscape(opts.cancelLabel || wsTr('ws.confirmCancel', null, 'Cancelar')) + '</button>' +
+          '<button type="button" class="ws-confirm-btn ' + (opts.danger ? 'danger' : 'primary') + '" data-confirm="ok">' + wsEscape(opts.confirmLabel || wsTr('ws.confirmOk', null, 'Confirmar')) + '</button>' +
         '</div>';
       backdrop.append(dialog);
       this.els.popovers.innerHTML = '';
@@ -1462,23 +1532,34 @@ const Workspace = {
     this.popover = 'bg';
     const bg = this.board.bg;
     const current = bg.color || '';
-    let html = '<div class="ws-popover"><p class="ws-pop-title">Fundo do quadro</p><div class="ws-color-grid">';
+    const pattern = typeof wsNormalizeBgPattern === 'function' ? wsNormalizeBgPattern(bg.pattern) : (bg.pattern || 'dots');
+    const patternBtns = WS_BG_PATTERN_OPTS.map(p =>
+      '<button type="button" class="ws-pop-chip' + (pattern === p.id ? ' active' : '') + '" data-bgpattern="' + p.id + '">' + wsEscape(wsTr(p.key, null, p.def)) + '</button>'
+    ).join('');
+
+    let html = '<div class="ws-popover"><p class="ws-pop-title">' + wsEscape(wsTr('ws.bgPopTitle', null, 'Fundo da área')) + '</p>' +
+      '<div class="ws-pop-sub" style="margin-top:0">' + wsEscape(wsTr('ws.bgPatternSub', null, 'Padrão da área')) + '</div>' +
+      '<div class="ws-pop-row">' + patternBtns + '</div>' +
+      '<div class="ws-pop-sub">' + wsEscape(wsTr('ws.bgSolidSub', null, 'Cor sólida')) + '</div>' +
+      '<div class="ws-color-grid">';
     WS_BG_SWATCHES.forEach(c => {
       const val = c || '';
       const bgc = c || 'var(--bg)';
-      html += '<button class="ws-swatch' + (val === current && !bg.image ? ' active' : '') + '" data-bgcolor="' + val + '" title="' + (val || 'Cor do tema') + '" style="background:' + bgc + '"></button>';
+      html += '<button class="ws-swatch' + (val === current && !bg.image ? ' active' : '') + '" data-bgcolor="' + val + '" title="' + wsEscape(val || wsTr('ws.bgThemeColor', null, 'Cor do tema')) + '" style="background:' + bgc + '"></button>';
     });
     html += '</div>' +
-      '<label class="ws-color-custom"><input type="color" value="' + (wsColor(current, '#0b0f1a') || '#0b0f1a') + '" data-bgcustom><span>Cor personalizada</span></label>' +
-      '<div class="ws-pop-sub">Imagem</div>' +
+      '<label class="ws-color-custom"><input type="color" value="' + (wsColor(current, '#0b0f1a') || '#0b0f1a') + '" data-bgcustom><span>' + wsEscape(wsTr('ws.bgCustomColor', null, 'Cor personalizada')) + '</span></label>' +
+      '<div class="ws-pop-sub">' + wsEscape(wsTr('ws.bgImageSub', null, 'Imagem de fundo')) + '</div>' +
       '<div class="ws-pop-row">' +
-        '<button class="ws-pop-chip" data-bgimg>' + svgIcon('upload') + ' Escolher imagem</button>' +
-        (bg.image ? '<button class="ws-pop-chip" data-bgdel>Remover</button>' : '') +
+        '<button class="ws-pop-chip" data-bgimg>' + svgIcon('upload') + ' ' + wsEscape(wsTr('ws.bgChooseImg', null, 'Escolher imagem')) + '</button>' +
+        (bg.image ? '<button class="ws-pop-chip" data-bgdel>' + wsEscape(wsTr('ws.bgRemoveImg', null, 'Remover')) + '</button>' : '') +
       '</div>' +
-      '<p class="ws-pop-note">Cor ou imagem de até 10 MB. O fundo fica salvo junto com o quadro.</p></div>';
+      '<p class="ws-pop-note">' + wsEscape(wsTr('ws.bgNote', null, 'Cor, padrão ou imagem de até 10 MB. O fundo fica salvo junto com o quadro.')) + '</p></div>';
     this.els.popovers.innerHTML = html;
     const pop = this.els.popovers.firstChild;
     pop.addEventListener('click', (e) => {
+      const patBtn = e.target.closest('[data-bgpattern]');
+      if (patBtn) { this.setBgPattern(patBtn.dataset.bgpattern, true); return; }
       const colorBtn = e.target.closest('[data-bgcolor]');
       if (colorBtn) { this.setBgColor(colorBtn.dataset.bgcolor); this.refreshBgPopover(); return; }
       if (e.target.closest('[data-bgimg]')) { this.els.fileBg.click(); return; }
@@ -1504,23 +1585,23 @@ const Workspace = {
     this.updateTopbar();
     const html =
       '<div class="ws-popover ws-add-pop">' +
-        '<p class="ws-pop-title">Adicionar ao quadro</p>' +
+        '<p class="ws-pop-title">' + wsEscape(wsTr('ws.addPopTitle', null, 'Adicionar ao quadro')) + '</p>' +
         '<div class="ws-add-list">' +
           '<button type="button" class="ws-add-item" data-newcard="note">' +
             svgIcon('pencil') +
-            '<div><b>Nota rápida</b><span>Anotação livre ou colada do PDF (duplo clique no quadro)</span></div>' +
+            '<div><b>' + wsEscape(wsTr('ws.addPopNoteTitle', null, 'Nota rápida')) + '</b><span>' + wsEscape(wsTr('ws.addPopNoteDesc', null, 'Anotação livre ou colada do PDF (duplo clique no quadro)')) + '</span></div>' +
           '</button>' +
           '<button type="button" class="ws-add-item" data-newcard="concept">' +
             svgIcon('hash') +
-            '<div><b>Conceito / Ideia</b><span>Título, #tags e síntese para ligar ideias</span></div>' +
+            '<div><b>' + wsEscape(wsTr('ws.addPopConceptTitle', null, 'Conceito / Ideia')) + '</b><span>' + wsEscape(wsTr('ws.addPopConceptDesc', null, 'Título, #tags e síntese para ligar ideias')) + '</span></div>' +
           '</button>' +
           '<button type="button" class="ws-add-item" data-newcard="checklist">' +
             svgIcon('checklist') +
-            '<div><b>Checklist / Revisão</b><span>Lista de tópicos marcáveis com progresso</span></div>' +
+            '<div><b>' + wsEscape(wsTr('ws.addPopCheckTitle', null, 'Checklist / Revisão')) + '</b><span>' + wsEscape(wsTr('ws.addPopCheckDesc', null, 'Lista de tópicos marcáveis com progresso')) + '</span></div>' +
           '</button>' +
           '<button type="button" class="ws-add-item" data-newcard="group">' +
             svgIcon('layers') +
-            '<div><b>Quadro / Grupo</b><span>Agrupa visualmente cartões de um mesmo tema</span></div>' +
+            '<div><b>' + wsEscape(wsTr('ws.addPopGroupTitle', null, 'Quadro / Grupo')) + '</b><span>' + wsEscape(wsTr('ws.addPopGroupDesc', null, 'Agrupa visualmente cartões de um mesmo tema')) + '</span></div>' +
           '</button>' +
         '</div>' +
       '</div>';
@@ -1552,24 +1633,24 @@ const Workspace = {
     this.updateTopbar();
 
     const scopes = [
-      { id: 'all',   label: 'Tudo' },
-      { id: 'cards', label: 'Cartões' },
-      { id: 'pdfs',  label: 'PDFs' },
-      { id: 'links', label: 'Ligações' }
+      { id: 'all',   label: wsTr('ws.searchScopeAll', null, 'Tudo') },
+      { id: 'cards', label: wsTr('ws.searchScopeCards', null, 'Cartões') },
+      { id: 'pdfs',  label: wsTr('ws.searchScopePdfs', null, 'PDFs') },
+      { id: 'links', label: wsTr('ws.searchScopeLinks', null, 'Ligações') }
     ].map(s =>
-      '<button type="button" class="ws-search-tab' + (this.searchScope === s.id ? ' active' : '') + '" data-wsscope="' + s.id + '">' + s.label + '</button>'
+      '<button type="button" class="ws-search-tab' + (this.searchScope === s.id ? ' active' : '') + '" data-wsscope="' + s.id + '">' + wsEscape(s.label) + '</button>'
     ).join('');
 
     const html =
-      '<div class="ws-popover ws-search-pop" role="dialog" aria-label="Buscar na área de trabalho">' +
+      '<div class="ws-popover ws-search-pop" role="dialog" aria-label="' + wsEscape(wsTr('ws.searchPopAria', null, 'Buscar na área de trabalho')) + '">' +
         '<div class="ws-search-input-wrap">' +
           svgIcon('search') +
-          '<input type="text" class="ws-search-input" data-wssearch value="' + wsEscape(this.searchQuery) + '" placeholder="Buscar notas, conceitos, #tags, PDFs, ligações…" autocomplete="off">' +
-          '<button type="button" class="ws-card-btn" data-wssearchclear title="Limpar busca" aria-label="Limpar busca"' + (this.searchQuery ? '' : ' hidden') + '>' + svgIcon('close') + '</button>' +
+          '<input type="text" class="ws-search-input" data-wssearch value="' + wsEscape(this.searchQuery) + '" placeholder="' + wsEscape(wsTr('ws.searchPopPh', null, 'Buscar notas, conceitos, #tags, PDFs, ligações…')) + '" autocomplete="off">' +
+          '<button type="button" class="ws-card-btn" data-wssearchclear title="' + wsEscape(wsTr('ws.searchPopClear', null, 'Limpar busca')) + '" aria-label="' + wsEscape(wsTr('ws.searchPopClear', null, 'Limpar busca')) + '"' + (this.searchQuery ? '' : ' hidden') + '>' + svgIcon('close') + '</button>' +
         '</div>' +
         '<div class="ws-search-tabs">' + scopes + '</div>' +
         '<div class="ws-search-list" data-wsresults></div>' +
-        '<p class="ws-pop-note" data-wssearchhint>↑↓ navega · Enter foca no cartão · Esc fecha</p>' +
+        '<p class="ws-pop-note" data-wssearchhint>' + wsEscape(wsTr('ws.searchPopHint', null, '↑↓ navega · Enter foca no cartão · Esc fecha')) + '</p>' +
       '</div>';
 
     this.els.popovers.innerHTML = html;
@@ -1648,8 +1729,11 @@ const Workspace = {
     if (this.searchIdx >= hits.length) this.searchIdx = 0;
 
     if (!hits.length) {
+      const q = this.searchQuery.trim();
       list.innerHTML = '<div class="ws-search-empty">' +
-        (this.searchQuery.trim() ? 'Nenhum resultado encontrado para "' + wsEscape(this.searchQuery.trim()) + '".' : 'O quadro ainda não tem itens para buscar.') +
+        wsEscape(q
+          ? wsTr('ws.searchEmptyQuery', { q }, 'Nenhum resultado encontrado para "' + q + '".')
+          : wsTr('ws.searchEmptyBoard', null, 'O quadro ainda não tem itens para buscar.')) +
         '</div>';
       return;
     }
@@ -1737,7 +1821,7 @@ const Workspace = {
     this.connCardId = card.id;
     this.updateTopbar();
 
-    const cardTitle = typeof wsCardDisplayTitle === 'function' ? wsCardDisplayTitle(card, this.board) : 'Cartão';
+    const cardTitle = typeof wsCardDisplayTitle === 'function' ? wsCardDisplayTitle(card, this.board) : wsTr('ws.card.generic', null, 'Cartão');
     const info = typeof wsGetCardConnections === 'function'
       ? wsGetCardConnections(this.board, card.id)
       : { all: [], total: 0 };
@@ -1747,6 +1831,8 @@ const Workspace = {
       .filter(c => c.id !== card.id && !existingPartnerIds.has(c.id))
       .sort((a, b) => (a.type === 'group' ? 1 : 0) - (b.type === 'group' ? 1 : 0));
 
+    const editLabel = wsTr('ws.connEdit', null, 'Editar ligação');
+    const delLabel = wsTr('ws.connDel', null, 'Remover ligação');
     const connHtml = info.all.length
       ? info.all.map(c => {
         const dirSym = c.direction === 'both' ? '↔' : (c.direction === 'in' ? '←' : (c.direction === 'none' ? '—' : '→'));
@@ -1755,17 +1841,17 @@ const Workspace = {
             '<span class="ws-conn-dir">' + dirSym + '</span>' +
             '<div class="ws-conn-meta"><b>' + wsEscape(c.partnerTitle) + '</b><small>' + wsEscape(c.partnerTypeLabel) + ' · ' + wsEscape(c.kindLabel) + (c.label ? ' · ' + wsEscape(c.label) : '') + '</small></div>' +
           '</button>' +
-          '<button type="button" class="ws-board-act" data-connedit="' + wsEscape(c.arrowId) + '" title="Editar ligação">' + svgIcon('sliders') + '</button>' +
-          '<button type="button" class="ws-board-act danger" data-conndel="' + wsEscape(c.arrowId) + '" title="Remover ligação">' + svgIcon('trash') + '</button>' +
+          '<button type="button" class="ws-board-act" data-connedit="' + wsEscape(c.arrowId) + '" title="' + wsEscape(editLabel) + '">' + svgIcon('sliders') + '</button>' +
+          '<button type="button" class="ws-board-act danger" data-conndel="' + wsEscape(c.arrowId) + '" title="' + wsEscape(delLabel) + '">' + svgIcon('trash') + '</button>' +
         '</div>';
       }).join('')
-      : '<p class="ws-pop-note" style="margin-top:0">Nenhuma ligação neste cartão ainda.</p>';
+      : '<p class="ws-pop-note" style="margin-top:0">' + wsEscape(wsTr('ws.connNoneYet', null, 'Nenhuma ligação neste cartão ainda.')) + '</p>';
 
     const quickHtml = candidates.length
-      ? '<div class="ws-pop-sub">Ligar rapidamente a…</div>' +
+      ? '<div class="ws-pop-sub">' + wsEscape(wsTr('ws.connQuickSub', null, 'Ligar rapidamente a…')) + '</div>' +
         '<div class="ws-conn-quick">' +
         candidates.slice(0, 12).map(other => {
-          const ot = typeof wsCardDisplayTitle === 'function' ? wsCardDisplayTitle(other, this.board) : 'Cartão';
+          const ot = typeof wsCardDisplayTitle === 'function' ? wsCardDisplayTitle(other, this.board) : wsTr('ws.card.generic', null, 'Cartão');
           const otype = typeof wsCardTypeLabel === 'function' ? wsCardTypeLabel(other.type) : other.type;
           return '<button type="button" class="ws-pop-chip ws-conn-add" data-connlink="' + wsEscape(other.id) + '">' +
             svgIcon('arrow') + '<span>' + wsEscape(ot) + '</span><small>' + wsEscape(otype) + '</small></button>';
@@ -1776,12 +1862,12 @@ const Workspace = {
     const html =
       '<div class="ws-popover ws-conn-pop">' +
         '<div class="ws-pop-head">' +
-          '<p class="ws-pop-title">Conexões · ' + wsEscape(cardTitle) + '</p>' +
+          '<p class="ws-pop-title">' + wsEscape(wsTr('ws.connPopTitle', { title: cardTitle }, 'Conexões · ' + cardTitle)) + '</p>' +
           '<span class="ws-pop-quota">' + info.total + '</span>' +
         '</div>' +
         '<div class="ws-conn-list">' + connHtml + '</div>' +
         '<div class="ws-pop-row" style="margin-top:10px">' +
-          '<button type="button" class="ws-io-btn" style="flex:1" data-connclickmode>' + svgIcon('arrow') + '<span>Clicar no destino no quadro</span></button>' +
+          '<button type="button" class="ws-io-btn" style="flex:1" data-connclickmode>' + svgIcon('arrow') + '<span>' + wsEscape(wsTr('ws.connClickMode', null, 'Clicar no destino no quadro')) + '</span></button>' +
         '</div>' +
         quickHtml +
       '</div>';
@@ -1864,7 +1950,9 @@ const Workspace = {
       const sp = btn.querySelector('span');
       if (sp) sp.textContent = n > 0 ? String(n) : '';
       btn.classList.toggle('has-links', n > 0);
-      btn.title = n > 0 ? (n + (n === 1 ? ' conexão' : ' conexões') + ' · ver ou ligar') : 'Ver conexões ou ligar a outro cartão';
+      btn.title = n > 0
+        ? (n === 1 ? wsTr('ws.connOne', null, '1 conexão · ver ou ligar') : wsTr('ws.connMany', { n }, n + ' conexões · ver ou ligar'))
+        : wsTr('ws.connNone', null, 'Ver conexões ou ligar a outro cartão');
     });
   },
 
@@ -1878,8 +1966,8 @@ const Workspace = {
 
     const head = el('header', 'ws-card-head');
     const grip = el('span', 'ws-card-grip', svgIcon('grip'));
-    grip.title = 'Arraste por aqui para mover';
-    grip.setAttribute('aria-label', 'Arraste para mover');
+    grip.title = wsTr('ws.gripTitle', null, 'Arraste por aqui para mover');
+    grip.setAttribute('aria-label', wsTr('ws.gripAria', null, 'Arraste para mover'));
     head.append(grip);
 
     const connCount = this.board.arrows.filter(a => a.from === card.id || a.to === card.id).length;
@@ -1887,7 +1975,9 @@ const Workspace = {
       const b = el('button', 'ws-card-conn' + (connCount > 0 ? ' has-links' : ''));
       b.type = 'button';
       b.dataset.cardConns = card.id;
-      b.title = connCount > 0 ? (connCount + (connCount === 1 ? ' conexão' : ' conexões') + ' · ver ou ligar') : 'Ver conexões ou ligar a outro cartão';
+      b.title = connCount > 0
+        ? (connCount === 1 ? wsTr('ws.connOne', null, '1 conexão · ver ou ligar') : wsTr('ws.connMany', { n: connCount }, connCount + ' conexões · ver ou ligar'))
+        : wsTr('ws.connNone', null, 'Ver conexões ou ligar a outro cartão');
       b.innerHTML = svgIcon('link') + '<span>' + (connCount > 0 ? String(connCount) : '') + '</span>';
       b.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -1897,12 +1987,12 @@ const Workspace = {
     };
 
     if (card.type === 'note') {
-      const title = el('span', 'ws-card-title', 'Nota');
+      const title = el('span', 'ws-card-title', wsTr('ws.card.note', null, 'Nota'));
       head.append(title);
       if (card.source) {
         const src = el('button', 'ws-card-src');
         src.type = 'button';
-        src.title = 'Abrir o PDF de origem';
+        src.title = wsTr('ws.noteSourceTitle', null, 'Abrir o PDF de origem');
         src.innerHTML = svgIcon('file') + '<span>p.' + card.source.page + '</span>';
         src.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -1910,17 +2000,17 @@ const Workspace = {
         });
         head.append(src);
       }
-      const editBtn = this.cardButton('pencil', 'Opções de formatação e cor da nota', card.editMode ? 'active' : '');
+      const editBtn = this.cardButton('pencil', wsTr('ws.noteEditTitle', null, 'Opções de formatação e cor da nota'), card.editMode ? 'active' : '');
       editBtn.dataset.noteact = 'edit';
       editBtn.setAttribute('aria-pressed', card.editMode ? 'true' : 'false');
 
       const conns = makeConnsBtn();
-      const link = this.cardButton('arrow', 'Ligar a outro cartão');
+      const link = this.cardButton('arrow', wsTr('ws.linkCardTitle', null, 'Ligar a outro cartão'));
       link.addEventListener('click', (e) => {
         e.stopPropagation();
         this.beginLink(card.id);
       });
-      const del = this.cardButton('close', 'Remover cartão', 'danger');
+      const del = this.cardButton('close', wsTr('ws.removeCardTitle', null, 'Remover cartão'), 'danger');
       del.addEventListener('click', (e) => {
         e.stopPropagation();
         this.requestRemoveCard(card);
@@ -1936,10 +2026,10 @@ const Workspace = {
 
       const fmtGroup = el('div', 'ws-note-tgroup');
       [
-        { cmd: 'bold', label: 'B', cls: '', title: 'Negrito (Ctrl+B)' },
-        { cmd: 'italic', label: 'I', cls: 'is-italic', title: 'Itálico (Ctrl+I)' },
-        { cmd: 'underline', label: 'S', cls: 'is-under', title: 'Sublinhado (Ctrl+U)' },
-        { cmd: 'strikeThrough', label: 'T', cls: 'is-strike', title: 'Cortado / Tachado' }
+        { cmd: 'bold', label: 'B', cls: '', title: wsTr('ws.noteBold', null, 'Negrito (Ctrl+B)') },
+        { cmd: 'italic', label: 'I', cls: 'is-italic', title: wsTr('ws.noteItalic', null, 'Itálico (Ctrl+I)') },
+        { cmd: 'underline', label: 'S', cls: 'is-under', title: wsTr('ws.noteUnderline', null, 'Sublinhado (Ctrl+U)') },
+        { cmd: 'strikeThrough', label: 'T', cls: 'is-strike', title: wsTr('ws.noteStrike', null, 'Cortado / Tachado') }
       ].forEach(it => {
         const b = el('button', 'ws-note-tool' + (it.cls ? ' ' + it.cls : ''), it.label);
         b.type = 'button';
@@ -1951,10 +2041,10 @@ const Workspace = {
 
       const alignGroup = el('div', 'ws-note-tgroup');
       [
-        { id: 'left', icon: 'alignL', title: 'Alinhar à esquerda' },
-        { id: 'center', icon: 'alignC', title: 'Centralizar texto' },
-        { id: 'right', icon: 'alignR', title: 'Alinhar à direita' },
-        { id: 'justify', icon: 'alignJ', title: 'Justificar texto' }
+        { id: 'left', icon: 'alignL', title: wsTr('ws.noteAlignL', null, 'Alinhar à esquerda') },
+        { id: 'center', icon: 'alignC', title: wsTr('ws.noteAlignC', null, 'Centralizar texto') },
+        { id: 'right', icon: 'alignR', title: wsTr('ws.noteAlignR', null, 'Alinhar à direita') },
+        { id: 'justify', icon: 'alignJ', title: wsTr('ws.noteAlignJ', null, 'Justificar texto') }
       ].forEach(it => {
         const b = el('button', 'ws-note-tool');
         b.type = 'button';
@@ -1967,8 +2057,8 @@ const Workspace = {
 
       const fontSel = el('select', 'ws-note-select');
       fontSel.dataset.notefont = '1';
-      fontSel.title = 'Fonte da nota';
-      fontSel.setAttribute('aria-label', 'Fonte da nota');
+      fontSel.title = wsTr('ws.noteFontTitle', null, 'Fonte da nota');
+      fontSel.setAttribute('aria-label', fontSel.title);
       fonts.forEach(f => {
         const opt = el('option', '', f.label);
         opt.value = f.id;
@@ -1978,8 +2068,8 @@ const Workspace = {
 
       const sizeSel = el('select', 'ws-note-select');
       sizeSel.dataset.notesize = '1';
-      sizeSel.title = 'Tamanho do texto';
-      sizeSel.setAttribute('aria-label', 'Tamanho do texto');
+      sizeSel.title = wsTr('ws.noteSizeTitle', null, 'Tamanho do texto');
+      sizeSel.setAttribute('aria-label', sizeSel.title);
       sizes.forEach(sz => {
         const opt = el('option', '', sz + 'px');
         opt.value = String(sz);
@@ -1994,10 +2084,10 @@ const Workspace = {
 
       const listGroup = el('div', 'ws-note-tgroup');
       [
-        { id: 'disc', label: '•', title: 'Tópicos com marcador (•)' },
-        { id: 'dash', label: '—', title: 'Tópicos com travessão (—)' },
-        { id: 'arrow', label: '▸', title: 'Tópicos com seta (▸)' },
-        { id: 'decimal', label: '1.', title: 'Lista numerada' }
+        { id: 'disc', label: '•', title: wsTr('ws.noteListDisc', null, 'Tópicos com marcador (•)') },
+        { id: 'dash', label: '—', title: wsTr('ws.noteListDash', null, 'Tópicos com travessão (—)') },
+        { id: 'arrow', label: '▸', title: wsTr('ws.noteListArrow', null, 'Tópicos com seta (▸)') },
+        { id: 'decimal', label: '1.', title: wsTr('ws.noteListNum', null, 'Lista numerada') }
       ].forEach(it => {
         const b = el('button', 'ws-note-tool', it.label);
         b.type = 'button';
@@ -2007,13 +2097,20 @@ const Workspace = {
         listGroup.append(b);
       });
 
+      const mathBtn = el('button', 'ws-note-tool', '∑');
+      mathBtn.type = 'button';
+      mathBtn.dataset.notemath = '1';
+      mathBtn.title = wsTr('ws.mathInsertTitle', null, 'Inserir fórmula LaTeX ($...$ ou $$...$$)');
+      mathBtn.setAttribute('aria-label', mathBtn.title);
+
       const colorBox = el('div', 'ws-pdf-hlcolors');
       tints.forEach(t => {
         const dot = el('button', 'ws-pdf-hldot' + ((card.accent || '') === t.id ? ' active' : ''));
         dot.type = 'button';
         dot.dataset.notetint = t.id;
-        dot.title = 'Cor ' + t.label;
-        dot.setAttribute('aria-label', 'Cor ' + t.label);
+        const cName = wsColorLabel(t);
+        dot.title = wsTr('ws.noteColorLabel', { label: cName }, 'Cor ' + cName);
+        dot.setAttribute('aria-label', dot.title);
         if (t.color) dot.style.background = t.color;
         else {
           dot.style.background = 'var(--surface-2)';
@@ -2032,19 +2129,29 @@ const Workspace = {
         el('span', 'ws-note-sep'),
         listGroup,
         el('span', 'ws-note-sep'),
+        mathBtn,
+        el('span', 'ws-note-sep'),
         colorBox
       );
 
+      const stage = el('div', 'ws-note-stage');
       const body = el('div', 'ws-note-body');
       body.contentEditable = 'true';
       body.spellcheck = false;
-      body.dataset.placeholder = 'Escreva algo…';
+      body.dataset.placeholder = wsTr('ws.notePlaceholder', null, 'Escreva algo…');
+      const mathView = el('div', 'ws-note-math-view');
+      mathView.hidden = true;
+      mathView.title = wsTr('ws.mathPreviewHint', null, 'Clique para editar LaTeX');
+      stage.append(body, mathView);
 
       const applyNoteTypography = () => {
         const fam = typeof wsNoteFontFamily === 'function' ? wsNoteFontFamily(card.font) : 'var(--font-ui)';
         body.style.setProperty('--ws-note-font', fam);
         body.style.setProperty('--ws-note-size', (card.fontSize || 14) + 'px');
         body.style.setProperty('--ws-note-align', card.align || 'left');
+        mathView.style.setProperty('--ws-note-font', fam);
+        mathView.style.setProperty('--ws-note-size', (card.fontSize || 14) + 'px');
+        mathView.style.setProperty('--ws-note-align', card.align || 'left');
         if (typeof Themes !== 'undefined' && Themes.ensureFonts && card.font) {
           Themes.ensureFonts([card.font]);
         }
@@ -2220,6 +2327,30 @@ const Workspace = {
           syncToolbar();
           return;
         }
+        const mathBtn = e.target.closest('[data-notemath]');
+        if (mathBtn) {
+          ensureBodyFocusCaret();
+          const sel = window.getSelection();
+          const selStr = sel ? sel.toString() : '';
+          let snippet = '$\\frac{a}{b}$';
+          if (typeof wsWrapMathSelection === 'function') {
+            snippet = wsWrapMathSelection(selStr, 0, selStr.length, false).text;
+          } else if (selStr) {
+            snippet = '$' + selStr + '$';
+          }
+          try {
+            if (!document.execCommand('insertText', false, snippet)) {
+              if (sel && sel.rangeCount) {
+                sel.deleteFromDocument();
+                sel.getRangeAt(0).insertNode(document.createTextNode(snippet));
+                sel.collapseToEnd();
+              }
+            }
+          } catch (err) { /* ignora */ }
+          commitNoteContent();
+          syncToolbar();
+          return;
+        }
         const tintDot = e.target.closest('[data-notetint]');
         if (tintDot) {
           card.accent = tintDot.dataset.notetint || '';
@@ -2229,22 +2360,54 @@ const Workspace = {
         }
       });
 
+      const renderNoteMathPreview = () => {
+        const plain = card.text || '';
+        if (typeof wsHasMathDelimiters === 'function' && wsHasMathDelimiters(plain) && document.activeElement !== body) {
+          const sanitized = card.html || (typeof wsPlainTextToNoteHtml === 'function' ? wsPlainTextToNoteHtml(plain) : '');
+          mathView.innerHTML = typeof wsRenderNoteDisplayHtml === 'function'
+            ? wsRenderNoteDisplayHtml(sanitized)
+            : sanitized;
+          mathView.hidden = false;
+          stage.classList.add('showing-math');
+        } else {
+          mathView.hidden = true;
+          stage.classList.remove('showing-math');
+        }
+      };
+
       fontSel.addEventListener('change', () => {
         card.font = typeof wsNormalizeNoteFont === 'function' ? wsNormalizeNoteFont(fontSel.value) : fontSel.value;
         applyNoteTypography();
+        renderNoteMathPreview();
         this.scheduleSave();
       });
       sizeSel.addEventListener('change', () => {
         card.fontSize = typeof wsNormalizeNoteSize === 'function' ? wsNormalizeNoteSize(sizeSel.value) : Number(sizeSel.value);
         applyNoteTypography();
+        renderNoteMathPreview();
         this.scheduleSave();
       });
 
+      mathView.addEventListener('click', (e) => {
+        e.stopPropagation();
+        mathView.hidden = true;
+        stage.classList.remove('showing-math');
+        body.focus();
+        syncToolbar();
+      });
       body.addEventListener('input', () => {
         commitNoteContent();
         syncToolbar();
       });
-      body.addEventListener('focus', () => syncToolbar());
+      body.addEventListener('focus', () => {
+        mathView.hidden = true;
+        stage.classList.remove('showing-math');
+        syncToolbar();
+      });
+      body.addEventListener('blur', () => {
+        commitNoteContent();
+        renderNoteMathPreview();
+      });
       body.addEventListener('keyup', () => syncToolbar());
       body.addEventListener('mouseup', () => syncToolbar());
       body.addEventListener('paste', (e) => {
@@ -2276,29 +2439,39 @@ const Workspace = {
           e.stopPropagation();
         }
       }, { passive: true });
+      mathView.addEventListener('wheel', (e) => {
+        if (!this.entered) return;
+        if (e.ctrlKey || e.metaKey) return;
+        if (mathView.scrollHeight > mathView.clientHeight + 2) {
+          e.stopPropagation();
+        }
+      }, { passive: true });
       node.addEventListener('wheel', (e) => {
         if (!this.entered) return;
         if (e.ctrlKey || e.metaKey) return;
+        const scroller = stage.classList.contains('showing-math') ? mathView : body;
         const overflowing = typeof wsShouldWheelScrollNote === 'function'
-          ? wsShouldWheelScrollNote(body)
-          : (body.scrollHeight > body.clientHeight + 2);
+          ? wsShouldWheelScrollNote(scroller)
+          : (scroller.scrollHeight > scroller.clientHeight + 2);
         if (!overflowing) return;
         e.preventDefault();
         e.stopPropagation();
-        body.scrollTop += (e.deltaY || 0);
+        scroller.scrollTop += (e.deltaY || 0);
       }, { passive: false });
 
+      renderNoteMathPreview();
       const resize = el('div', 'ws-resize');
-      resize.title = 'Redimensionar';
-      node.append(head, editBar, body, resize);
+      resize.title = wsTr('ws.resize', null, 'Redimensionar');
+      node.append(head, editBar, stage, resize);
       resize.addEventListener('pointerdown', (e) => this.startResize(e, card));
     } else if (card.type === 'concept') {
-      const title = el('span', 'ws-card-title', 'Conceito');
+      const title = el('span', 'ws-card-title', wsTr('ws.card.concept', null, 'Conceito'));
       const tintBar = el('div', 'ws-card-tints');
       (typeof WS_CARD_TINTS !== 'undefined' ? WS_CARD_TINTS : []).forEach(t => {
         const dot = el('button', 'ws-tint-dot' + ((card.accent || '') === t.id ? ' active' : ''));
         dot.type = 'button';
-        dot.title = 'Cor ' + t.label;
+        const cName = wsColorLabel(t);
+        dot.title = wsTr('ws.noteColorLabel', { label: cName }, 'Cor ' + cName);
         dot.style.background = t.color || 'var(--border)';
         dot.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -2310,16 +2483,16 @@ const Workspace = {
         tintBar.append(dot);
       });
       const conns = makeConnsBtn();
-      const link = this.cardButton('arrow', 'Ligar a outro cartão');
+      const link = this.cardButton('arrow', wsTr('ws.linkCardTitle', null, 'Ligar a outro cartão'));
       link.addEventListener('click', (e) => { e.stopPropagation(); this.beginLink(card.id); });
-      const del = this.cardButton('close', 'Remover conceito', 'danger');
+      const del = this.cardButton('close', wsTr('ws.conceptRemoveTitle', null, 'Remover conceito'), 'danger');
       del.addEventListener('click', (e) => { e.stopPropagation(); this.requestRemoveCard(card); });
       head.append(title, tintBar, conns, link, del);
 
       const wrap = el('div', 'ws-concept-wrap');
       const nameInp = el('input', 'ws-concept-title');
       nameInp.type = 'text';
-      nameInp.placeholder = 'Título do conceito…';
+      nameInp.placeholder = wsTr('ws.conceptTitlePh', null, 'Título do conceito…');
       nameInp.value = card.title || '';
       nameInp.maxLength = 120;
       nameInp.addEventListener('input', () => {
@@ -2330,8 +2503,8 @@ const Workspace = {
       const tagsRow = el('div', 'ws-concept-tags-row');
       const tagsInp = el('input', 'ws-concept-tags-inp');
       tagsInp.type = 'text';
-      tagsInp.placeholder = 'Adicione #tags…';
-      tagsInp.setAttribute('aria-label', 'Tags do conceito');
+      tagsInp.placeholder = wsTr('ws.conceptTagsPh', null, 'Adicione #tags…');
+      tagsInp.setAttribute('aria-label', wsTr('ws.conceptTagsAria', null, 'Tags do conceito'));
       const formatTagsInput = () => {
         const line = typeof wsFormatTagsLine === 'function' ? wsFormatTagsLine(card.tags) : '';
         tagsInp.value = line;
@@ -2356,13 +2529,45 @@ const Workspace = {
       });
       tagsRow.append(tagsInp);
 
+      const stage = el('div', 'ws-note-stage');
       const body = el('textarea', 'ws-note-body');
-      body.placeholder = 'Síntese, exemplo ou pergunta de revisão…';
+      body.placeholder = wsTr('ws.conceptBodyPh', null, 'Síntese, exemplo ou pergunta de revisão…');
       body.value = card.text || '';
       body.spellcheck = false;
+      const mathView = el('div', 'ws-note-math-view');
+      mathView.hidden = true;
+      mathView.title = wsTr('ws.mathPreviewHint', null, 'Clique para editar LaTeX');
+      stage.append(body, mathView);
+
+      const renderConceptMathPreview = () => {
+        if (typeof wsHasMathDelimiters === 'function' && wsHasMathDelimiters(card.text) && document.activeElement !== body) {
+          mathView.innerHTML = typeof wsRenderTextWithMath === 'function'
+            ? wsRenderTextWithMath(card.text)
+            : wsEscape(card.text).replace(/\n/g, '<br>');
+          mathView.hidden = false;
+          stage.classList.add('showing-math');
+        } else {
+          mathView.hidden = true;
+          stage.classList.remove('showing-math');
+        }
+      };
+
+      mathView.addEventListener('click', (e) => {
+        e.stopPropagation();
+        mathView.hidden = true;
+        stage.classList.remove('showing-math');
+        body.focus();
+      });
       body.addEventListener('input', () => {
         card.text = body.value;
         this.scheduleSave();
+      });
+      body.addEventListener('focus', () => {
+        mathView.hidden = true;
+        stage.classList.remove('showing-math');
+      });
+      body.addEventListener('blur', () => {
+        renderConceptMathPreview();
       });
       body.addEventListener('wheel', (e) => {
         if (!this.entered) return;
@@ -2373,16 +2578,24 @@ const Workspace = {
           e.stopPropagation();
         }
       }, { passive: true });
+      mathView.addEventListener('wheel', (e) => {
+        if (!this.entered) return;
+        if (e.ctrlKey || e.metaKey) return;
+        if (mathView.scrollHeight > mathView.clientHeight + 2) {
+          e.stopPropagation();
+        }
+      }, { passive: true });
 
-      wrap.append(nameInp, tagsRow, body);
+      renderConceptMathPreview();
+      wrap.append(nameInp, tagsRow, stage);
       const resize = el('div', 'ws-resize');
-      resize.title = 'Redimensionar';
+      resize.title = wsTr('ws.resize', null, 'Redimensionar');
       node.append(head, wrap, resize);
       resize.addEventListener('pointerdown', (e) => this.startResize(e, card));
     } else if (card.type === 'checklist') {
       const titleInp = el('input', 'ws-check-title');
       titleInp.type = 'text';
-      titleInp.placeholder = 'Checklist de estudo…';
+      titleInp.placeholder = wsTr('ws.checkTitlePh', null, 'Checklist de estudo…');
       titleInp.value = card.title || '';
       titleInp.maxLength = 120;
       titleInp.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -2393,15 +2606,15 @@ const Workspace = {
 
       const prog = el('span', 'ws-check-prog');
       const conns = makeConnsBtn();
-      const link = this.cardButton('arrow', 'Ligar a outro cartão');
+      const link = this.cardButton('arrow', wsTr('ws.linkCardTitle', null, 'Ligar a outro cartão'));
       link.addEventListener('click', (e) => { e.stopPropagation(); this.beginLink(card.id); });
-      const del = this.cardButton('close', 'Remover checklist', 'danger');
+      const del = this.cardButton('close', wsTr('ws.checkRemoveTitle', null, 'Remover checklist'), 'danger');
       del.addEventListener('click', (e) => { e.stopPropagation(); this.requestRemoveCard(card); });
       head.append(titleInp, prog, conns, link, del);
 
       const listEl = el('div', 'ws-check-list');
       const addForm = el('form', 'ws-check-add');
-      addForm.innerHTML = '<input type="text" placeholder="+ Novo item (Enter)…" maxlength="240"><button type="submit" title="Adicionar item">' + svgIcon('plus') + '</button>';
+      addForm.innerHTML = '<input type="text" placeholder="' + wsEscape(wsTr('ws.checkAddPh', null, '+ Novo item (Enter)…')) + '" maxlength="240"><button type="submit" title="' + wsEscape(wsTr('ws.checkAddTitle', null, 'Adicionar item')) + '">' + svgIcon('plus') + '</button>';
 
       const renderItems = () => {
         card.items = Array.isArray(card.items) ? card.items : [];
@@ -2409,7 +2622,7 @@ const Workspace = {
         prog.textContent = doneCount + '/' + card.items.length;
         listEl.innerHTML = '';
         if (!card.items.length) {
-          listEl.append(el('div', 'ws-check-empty', 'Adicione tópicos ou passos abaixo.'));
+          listEl.append(el('div', 'ws-check-empty', wsTr('ws.checkEmpty', null, 'Adicione tópicos ou passos abaixo.')));
           return;
         }
         card.items.forEach((it) => {
@@ -2417,7 +2630,7 @@ const Workspace = {
           const cb = document.createElement('input');
           cb.type = 'checkbox';
           cb.checked = !!it.done;
-          cb.setAttribute('aria-label', 'Marcar item');
+          cb.setAttribute('aria-label', wsTr('ws.checkAria', null, 'Marcar item'));
           cb.addEventListener('change', () => {
             it.done = cb.checked;
             row.classList.toggle('done', it.done);
@@ -2433,7 +2646,7 @@ const Workspace = {
             it.text = txt.value;
             this.scheduleSave();
           });
-          const rm = this.cardButton('close', 'Remover item', 'danger');
+          const rm = this.cardButton('close', wsTr('ws.checkRemoveItem', null, 'Remover item'), 'danger');
           rm.addEventListener('click', (e) => {
             e.stopPropagation();
             card.items = card.items.filter(x => x.id !== it.id);
@@ -2458,13 +2671,13 @@ const Workspace = {
       });
 
       const resize = el('div', 'ws-resize');
-      resize.title = 'Redimensionar';
+      resize.title = wsTr('ws.resize', null, 'Redimensionar');
       node.append(head, listEl, addForm, resize);
       resize.addEventListener('pointerdown', (e) => this.startResize(e, card));
     } else if (card.type === 'group') {
       const titleInp = el('input', 'ws-group-title');
       titleInp.type = 'text';
-      titleInp.placeholder = 'Nome do grupo…';
+      titleInp.placeholder = wsTr('ws.groupTitlePh', null, 'Nome do grupo…');
       titleInp.value = card.title || '';
       titleInp.maxLength = 120;
       titleInp.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -2477,7 +2690,8 @@ const Workspace = {
       (typeof WS_CARD_TINTS !== 'undefined' ? WS_CARD_TINTS : []).forEach(t => {
         const dot = el('button', 'ws-tint-dot' + ((card.accent || '') === t.id ? ' active' : ''));
         dot.type = 'button';
-        dot.title = 'Cor ' + t.label;
+        const cName = wsColorLabel(t);
+        dot.title = wsTr('ws.noteColorLabel', { label: cName }, 'Cor ' + cName);
         dot.style.background = t.color || 'var(--border)';
         dot.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -2490,50 +2704,51 @@ const Workspace = {
       });
 
       const conns = makeConnsBtn();
-      const link = this.cardButton('arrow', 'Ligar grupo a outro cartão');
+      const link = this.cardButton('arrow', wsTr('ws.groupLinkTitle', null, 'Ligar grupo a outro cartão'));
       link.addEventListener('click', (e) => { e.stopPropagation(); this.beginLink(card.id); });
-      const del = this.cardButton('close', 'Remover grupo', 'danger');
+      const del = this.cardButton('close', wsTr('ws.groupRemoveTitle', null, 'Remover grupo'), 'danger');
       del.addEventListener('click', (e) => { e.stopPropagation(); this.requestRemoveCard(card); });
       head.append(titleInp, tintBar, conns, link, del);
 
-      const hint = el('div', 'ws-group-hint', 'Arraste o cabeçalho para mover o grupo e os cartões dentro dele · segure Shift para mover só a moldura');
+      const hint = el('div', 'ws-group-hint', wsTr('ws.groupHint', null, 'Arraste a moldura para mover tudo · segure Alt para mover só a moldura'));
       const resize = el('div', 'ws-resize');
-      resize.title = 'Redimensionar grupo';
+      resize.title = wsTr('ws.groupResizeTitle', null, 'Redimensionar grupo');
       node.append(head, hint, resize);
       resize.addEventListener('pointerdown', (e) => this.startResize(e, card));
     } else if (card.type === 'image') {
       const meta = this.imgMeta(card);
+      const fallbackImgTitle = wsTr('ws.card.image', null, 'Imagem');
       const title = el('span', 'ws-card-title');
-      title.textContent = meta ? meta.name : 'Imagem';
-      title.title = meta ? meta.name : 'Imagem';
+      title.textContent = meta ? meta.name : fallbackImgTitle;
+      title.title = meta ? meta.name : fallbackImgTitle;
       head.append(title);
 
       const zoomBar = el('div', 'ws-pdf-zoombar');
       const zOutBtn = el('button', 'ws-card-btn ws-pdf-zbtn', '−');
       zOutBtn.type = 'button';
       zOutBtn.dataset.imgact = 'zout';
-      zOutBtn.title = 'Diminuir zoom da imagem';
-      zOutBtn.setAttribute('aria-label', 'Diminuir zoom da imagem');
+      zOutBtn.title = wsTr('ws.img.zoomOut', null, 'Diminuir zoom da imagem');
+      zOutBtn.setAttribute('aria-label', zOutBtn.title);
       const zValBtn = el('button', 'ws-pdf-zoomval');
       zValBtn.type = 'button';
       zValBtn.textContent = Math.round((card.zoom || 1) * 100) + '%';
-      zValBtn.title = 'Restaurar zoom para 100%';
-      zValBtn.setAttribute('aria-label', 'Restaurar zoom da imagem para 100%');
+      zValBtn.title = wsTr('ws.img.zoomReset', null, 'Restaurar zoom para 100%');
+      zValBtn.setAttribute('aria-label', zValBtn.title);
       const zInBtn = el('button', 'ws-card-btn ws-pdf-zbtn', '+');
       zInBtn.type = 'button';
       zInBtn.dataset.imgact = 'zin';
-      zInBtn.title = 'Aumentar zoom da imagem';
-      zInBtn.setAttribute('aria-label', 'Aumentar zoom da imagem');
+      zInBtn.title = wsTr('ws.img.zoomIn', null, 'Aumentar zoom da imagem');
+      zInBtn.setAttribute('aria-label', zInBtn.title);
       zoomBar.append(zOutBtn, zValBtn, zInBtn);
       head.append(zoomBar);
 
       const conns = makeConnsBtn();
-      const link = this.cardButton('arrow', 'Ligar a outro cartão');
+      const link = this.cardButton('arrow', wsTr('ws.linkCardTitle', null, 'Ligar a outro cartão'));
       link.addEventListener('click', (e) => {
         e.stopPropagation();
         this.beginLink(card.id);
       });
-      const del = this.cardButton('close', 'Remover imagem', 'danger');
+      const del = this.cardButton('close', wsTr('ws.img.removeTitle', null, 'Remover imagem'), 'danger');
       del.addEventListener('click', (e) => {
         e.stopPropagation();
         this.requestRemoveCard(card);
@@ -2543,11 +2758,11 @@ const Workspace = {
       const frame = el('div', 'ws-img-frame');
       frame.innerHTML =
         '<div class="ws-img-body">' +
-          '<div class="ws-img-stage"><img alt="' + wsEscape(meta ? meta.name : 'Imagem') + '"></div>' +
+          '<div class="ws-img-stage"><img alt="' + wsEscape(meta ? meta.name : fallbackImgTitle) + '"></div>' +
         '</div>';
       const body = frame.querySelector('.ws-img-body');
       const resize = el('div', 'ws-resize');
-      resize.title = 'Redimensionar';
+      resize.title = wsTr('ws.resize', null, 'Redimensionar');
       node.append(head, frame, resize);
       resize.addEventListener('pointerdown', (e) => this.startResize(e, card));
 
@@ -2582,13 +2797,13 @@ const Workspace = {
 
       const totalPages = meta && meta.pages ? meta.pages : 0;
       const pager = el('div', 'ws-pdf-pager');
-      const prevBtn = this.cardButton('chevL', 'Página anterior', 'ws-pdf-pbtn');
+      const prevBtn = this.cardButton('chevL', wsTr('ws.pdf.prevPage', null, 'Página anterior'), 'ws-pdf-pbtn');
       prevBtn.dataset.pdfact = 'prev';
       const pageBtn = el('button', 'ws-pdf-page');
       pageBtn.type = 'button';
       pageBtn.textContent = (card.page || 1) + ' / ' + (totalPages || '…');
-      pageBtn.title = 'Clique para ir para uma página específica';
-      const nextBtn = this.cardButton('chevR', 'Próxima página', 'ws-pdf-pbtn');
+      pageBtn.title = wsTr('ws.pdf.gotoPageTitle', null, 'Clique para ir para uma página específica');
+      const nextBtn = this.cardButton('chevR', wsTr('ws.pdf.nextPage', null, 'Próxima página'), 'ws-pdf-pbtn');
       nextBtn.dataset.pdfact = 'next';
       pager.append(prevBtn, pageBtn, nextBtn);
       head.append(pager);
@@ -2597,29 +2812,29 @@ const Workspace = {
       const zOutBtn = el('button', 'ws-card-btn ws-pdf-zbtn', '−');
       zOutBtn.type = 'button';
       zOutBtn.dataset.pdfact = 'zout';
-      zOutBtn.title = 'Diminuir zoom do PDF';
-      zOutBtn.setAttribute('aria-label', 'Diminuir zoom do PDF');
+      zOutBtn.title = wsTr('ws.pdf.zoomOut', null, 'Diminuir zoom do PDF');
+      zOutBtn.setAttribute('aria-label', zOutBtn.title);
       const zValBtn = el('button', 'ws-pdf-zoomval');
       zValBtn.type = 'button';
       zValBtn.textContent = Math.round((card.zoom || 1) * 100) + '%';
-      zValBtn.title = 'Restaurar zoom para 100% (ajustar)';
-      zValBtn.setAttribute('aria-label', 'Restaurar zoom do PDF para 100%');
+      zValBtn.title = wsTr('ws.pdf.zoomReset', null, 'Restaurar zoom para 100% (ajustar)');
+      zValBtn.setAttribute('aria-label', zValBtn.title);
       const zInBtn = el('button', 'ws-card-btn ws-pdf-zbtn', '+');
       zInBtn.type = 'button';
       zInBtn.dataset.pdfact = 'zin';
-      zInBtn.title = 'Aumentar zoom do PDF';
-      zInBtn.setAttribute('aria-label', 'Aumentar zoom do PDF');
+      zInBtn.title = wsTr('ws.pdf.zoomIn', null, 'Aumentar zoom do PDF');
+      zInBtn.setAttribute('aria-label', zInBtn.title);
       zoomBar.append(zOutBtn, zValBtn, zInBtn);
       head.append(zoomBar);
 
-      const searchBtn = this.cardButton('search', 'Buscar palavras neste PDF');
+      const searchBtn = this.cardButton('search', wsTr('ws.pdf.searchTitle', null, 'Buscar palavras neste PDF'));
       searchBtn.dataset.pdfact = 'search';
       searchBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         this.togglePdfSearch(card);
       });
 
-      const editBtn = this.cardButton('pencil', 'Opções de edição e movimento do PDF', card.editMode ? 'active' : '');
+      const editBtn = this.cardButton('pencil', wsTr('ws.pdf.editTitle', null, 'Opções de edição e movimento do PDF'), card.editMode ? 'active' : '');
       editBtn.dataset.pdfact = 'edit';
       editBtn.setAttribute('aria-pressed', card.editMode ? 'true' : 'false');
       editBtn.addEventListener('click', (e) => {
@@ -2628,17 +2843,17 @@ const Workspace = {
       });
 
       const conns = makeConnsBtn();
-      const link = this.cardButton('arrow', 'Ligar a outro cartão');
+      const link = this.cardButton('arrow', wsTr('ws.linkCardTitle', null, 'Ligar a outro cartão'));
       link.addEventListener('click', (e) => {
         e.stopPropagation();
         this.beginLink(card.id);
       });
-      const hl = this.cardButton('highlight', 'Destaques desta página');
+      const hl = this.cardButton('highlight', wsTr('ws.pdf.hlTitle', null, 'Destaques desta página'));
       hl.addEventListener('click', (e) => {
         e.stopPropagation();
         this.openHighlights(card);
       });
-      const del = this.cardButton('close', 'Remover PDF', 'danger');
+      const del = this.cardButton('close', wsTr('ws.pdf.removeTitle', null, 'Remover PDF'), 'danger');
       del.addEventListener('click', (e) => {
         e.stopPropagation();
         this.requestRemoveCard(card);
@@ -2649,11 +2864,11 @@ const Workspace = {
       searchBar.hidden = true;
       searchBar.innerHTML =
         svgIcon('search') +
-        '<input type="text" class="ws-pdf-sinput" placeholder="Buscar dentro deste PDF…" aria-label="Buscar no PDF">' +
+        '<input type="text" class="ws-pdf-sinput" placeholder="' + wsEscape(wsTr('ws.pdf.searchPh', null, 'Buscar dentro deste PDF…')) + '" aria-label="' + wsEscape(wsTr('ws.pdf.searchPh', null, 'Buscar no PDF')) + '">' +
         '<span class="ws-pdf-scount" data-pdfscount></span>' +
-        '<button type="button" class="ws-card-btn ws-pdf-sbtn" data-pdfsact="prev" title="Anterior (Shift+Enter)" aria-label="Ocorrência anterior">' + svgIcon('chevU') + '</button>' +
-        '<button type="button" class="ws-card-btn ws-pdf-sbtn" data-pdfsact="next" title="Próxima (Enter)" aria-label="Próxima ocorrência">' + svgIcon('chevD') + '</button>' +
-        '<button type="button" class="ws-card-btn ws-pdf-sbtn" data-pdfsact="close" title="Fechar busca (Esc)" aria-label="Fechar busca no PDF">' + svgIcon('close') + '</button>';
+        '<button type="button" class="ws-card-btn ws-pdf-sbtn" data-pdfsact="prev" title="' + wsEscape(wsTr('ws.pdf.searchPrev', null, 'Anterior (Shift+Enter)')) + '" aria-label="' + wsEscape(wsTr('ws.pdf.searchPrev', null, 'Anterior (Shift+Enter)')) + '">' + svgIcon('chevU') + '</button>' +
+        '<button type="button" class="ws-card-btn ws-pdf-sbtn" data-pdfsact="next" title="' + wsEscape(wsTr('ws.pdf.searchNext', null, 'Próxima (Enter)')) + '" aria-label="' + wsEscape(wsTr('ws.pdf.searchNext', null, 'Próxima (Enter)')) + '">' + svgIcon('chevD') + '</button>' +
+        '<button type="button" class="ws-card-btn ws-pdf-sbtn" data-pdfsact="close" title="' + wsEscape(wsTr('ws.pdf.searchClose', null, 'Fechar busca (Esc)')) + '" aria-label="' + wsEscape(wsTr('ws.pdf.searchClose', null, 'Fechar busca (Esc)')) + '">' + svgIcon('close') + '</button>';
 
       const sInput = searchBar.querySelector('.ws-pdf-sinput');
       let pdfSearchTimer = null;
@@ -2685,16 +2900,17 @@ const Workspace = {
       editBar.hidden = !card.editMode;
       let hlDots = '';
       WS_HL_COLORS.forEach(c => {
-        hlDots += '<button type="button" class="ws-pdf-hldot' + (card.hlColor === c.value ? ' active' : '') + '" data-hlpick="' + c.value + '" title="Cor ' + c.label + '" aria-label="Destacar em ' + c.label + '" style="background:' + c.value + '"></button>';
+        const cLabel = wsColorLabel(c);
+        hlDots += '<button type="button" class="ws-pdf-hldot' + (card.hlColor === c.value ? ' active' : '') + '" data-hlpick="' + c.value + '" title="' + wsEscape(wsTr('ws.noteColorLabel', { label: cLabel }, 'Cor ' + cLabel)) + '" aria-label="' + wsEscape(wsTr('ws.noteColorLabel', { label: cLabel }, 'Cor ' + cLabel)) + '" style="background:' + c.value + '"></button>';
       });
       editBar.innerHTML =
-        '<button type="button" class="ws-pdf-modebtn" data-pdfmode="read" title="Selecionar texto e clicar para mudar página">' + svgIcon('cursor') + '<span>Ler</span></button>' +
-        '<button type="button" class="ws-pdf-modebtn" data-pdfmode="pan" title="Arrastar/mexer com a mão (ou botão direito)">' + svgIcon('hand') + '<span>Mexer</span></button>' +
-        '<button type="button" class="ws-pdf-modebtn" data-pdfmode="highlight" title="Selecionar texto para destacar direto">' + svgIcon('highlight') + '<span>Destacar</span></button>' +
-        '<button type="button" class="ws-pdf-modebtn" data-pdfmode="note" title="Clicar no PDF para criar um cartão de nota">' + svgIcon('plus') + '<span>Nota</span></button>' +
+        '<button type="button" class="ws-pdf-modebtn" data-pdfmode="read" title="' + wsEscape(wsTr('ws.pdf.modeReadTip', null, 'Selecionar texto e clicar para mudar página')) + '">' + svgIcon('cursor') + '<span>' + wsEscape(wsTr('ws.pdf.modeRead', null, 'Ler')) + '</span></button>' +
+        '<button type="button" class="ws-pdf-modebtn" data-pdfmode="pan" title="' + wsEscape(wsTr('ws.pdf.modePanTip', null, 'Arrastar/mexer com a mão (ou botão direito)')) + '">' + svgIcon('hand') + '<span>' + wsEscape(wsTr('ws.pdf.modePan', null, 'Mexer')) + '</span></button>' +
+        '<button type="button" class="ws-pdf-modebtn" data-pdfmode="highlight" title="' + wsEscape(wsTr('ws.pdf.modeHlTip', null, 'Selecionar texto para destacar direto')) + '">' + svgIcon('highlight') + '<span>' + wsEscape(wsTr('ws.pdf.modeHl', null, 'Destacar')) + '</span></button>' +
+        '<button type="button" class="ws-pdf-modebtn" data-pdfmode="note" title="' + wsEscape(wsTr('ws.pdf.modeNoteTip', null, 'Clicar no PDF para criar um cartão de nota')) + '">' + svgIcon('plus') + '<span>' + wsEscape(wsTr('ws.pdf.modeNote', null, 'Nota')) + '</span></button>' +
         '<div class="ws-pdf-hlcolors"' + (card.pdfMode === 'highlight' ? '' : ' hidden') + '>' + hlDots + '</div>' +
-        '<button type="button" class="ws-pdf-modebtn" data-pdfact="rotate" title="Girar página 90°">' + svgIcon('rotate') + '<span>Girar</span></button>' +
-        '<span class="ws-pdf-edithint">botão direito mexe</span>';
+        '<button type="button" class="ws-pdf-modebtn" data-pdfact="rotate" title="' + wsEscape(wsTr('ws.pdf.rotateTip', null, 'Girar página 90°')) + '">' + svgIcon('rotate') + '<span>' + wsEscape(wsTr('ws.pdf.rotate', null, 'Girar')) + '</span></button>' +
+        '<span class="ws-pdf-edithint">' + wsEscape(wsTr('ws.pdf.rightHint', null, 'botão direito mexe')) + '</span>';
 
       editBar.addEventListener('pointerdown', (e) => e.stopPropagation());
       editBar.addEventListener('click', (e) => {
@@ -2731,12 +2947,12 @@ const Workspace = {
             '</div>' +
           '</div>' +
         '</div>' +
-        '<button type="button" class="ws-pdf-nav prev" data-pdfact="prev" title="Página anterior (←)" aria-label="Página anterior">' + svgIcon('chevL') + '</button>' +
-        '<button type="button" class="ws-pdf-nav next" data-pdfact="next" title="Próxima página (→)" aria-label="Próxima página">' + svgIcon('chevR') + '</button>' +
-        '<div class="ws-pdf-loading">carregando PDF</div>';
+        '<button type="button" class="ws-pdf-nav prev" data-pdfact="prev" title="' + wsEscape(wsTr('ws.pdf.prevPage', null, 'Página anterior')) + ' (←)" aria-label="' + wsEscape(wsTr('ws.pdf.prevPage', null, 'Página anterior')) + '">' + svgIcon('chevL') + '</button>' +
+        '<button type="button" class="ws-pdf-nav next" data-pdfact="next" title="' + wsEscape(wsTr('ws.pdf.nextPage', null, 'Próxima página')) + ' (→)" aria-label="' + wsEscape(wsTr('ws.pdf.nextPage', null, 'Próxima página')) + '">' + svgIcon('chevR') + '</button>' +
+        '<div class="ws-pdf-loading">' + wsEscape(wsTr('ws.pdf.loading', null, 'carregando PDF')) + '</div>';
       const body = frame.querySelector('.ws-pdf-body');
       const resize = el('div', 'ws-resize');
-      resize.title = 'Redimensionar';
+      resize.title = wsTr('ws.resize', null, 'Redimensionar');
       node.append(head, searchBar, editBar, frame, resize);
       resize.addEventListener('pointerdown', (e) => this.startResize(e, card));
 
@@ -2889,7 +3105,7 @@ const Workspace = {
       y: opts.y == null ? c.y - 125 : opts.y,
       w: opts.w || 300,
       h: opts.h || 250,
-      title: opts.title || 'Revisão',
+      title: opts.title != null ? opts.title : wsTr('ws.checkTitleDef', null, 'Revisão'),
       items: Array.isArray(opts.items) ? opts.items : [],
       accent: opts.accent || ''
     };
@@ -2916,7 +3132,7 @@ const Workspace = {
       y: opts.y == null ? c.y - 160 : opts.y,
       w: opts.w || 440,
       h: opts.h || 320,
-      title: opts.title || 'Novo grupo',
+      title: opts.title != null ? opts.title : wsTr('ws.groupTitleDef', null, 'Novo grupo'),
       accent: opts.accent || 'blue'
     };
     this.board.cards.push(card);
@@ -2936,9 +3152,9 @@ const Workspace = {
     if (!card) return;
     if (card.type === 'pdf') {
       const ok = await this.openConfirm({
-        title: 'Remover este PDF do quadro?',
-        message: 'O arquivo salvo no navegador também será apagado.',
-        confirmLabel: 'Remover',
+        title: wsTr('ws.confirmDeletePdfTitle', null, 'Remover este PDF do quadro?'),
+        message: wsTr('ws.confirmDeletePdfMsg', null, 'O arquivo salvo no navegador também será apagado.'),
+        confirmLabel: wsTr('ws.confirmDeleteBtn', null, 'Remover'),
         danger: true
       });
       if (!ok) return;
@@ -3080,7 +3296,7 @@ const Workspace = {
     this.renderInk();
 
     const total = this.selectedIds.size + this.selectedStrokes.size;
-    if (!total) toast('Nada no quadro para selecionar', 'cursor');
+    if (!total) toast(wsTr('ws.selectAllEmpty', null, 'Nada no quadro para selecionar'), 'cursor');
   },
 
   async deleteSelected() {
@@ -3095,9 +3311,9 @@ const Workspace = {
     const hasPdf = cardsToRemove.some(c => c.type === 'pdf');
     if (hasPdf) {
       const ok = await this.openConfirm({
-        title: 'Remover ' + (cardsToRemove.length + strokeIds.size) + ' item(ns) selecionado(s)?',
-        message: 'Os PDFs incluídos na seleção também serão apagados do navegador.',
-        confirmLabel: 'Remover tudo',
+        title: wsTr('ws.confirmMultiTitle', { n: cardsToRemove.length + strokeIds.size }, 'Remover ' + (cardsToRemove.length + strokeIds.size) + ' item(ns) selecionado(s)?'),
+        message: wsTr('ws.confirmMultiMsg', null, 'Os PDFs incluídos na seleção também serão apagados do navegador.'),
+        confirmLabel: wsTr('ws.confirmMultiBtn', null, 'Remover tudo'),
         danger: true
       });
       if (!ok) return;
@@ -3175,12 +3391,12 @@ const Workspace = {
       return;
     }
     const parts = [];
-    if (cCount) parts.push(cCount + (cCount === 1 ? ' cartão' : ' cartões'));
-    if (sCount) parts.push(sCount + (sCount === 1 ? ' traço' : ' traços'));
+    if (cCount) parts.push(cCount === 1 ? wsTr('ws.multiOneCard', null, '1 cartão') : wsTr('ws.multiManyCards', { n: cCount }, cCount + ' cartões'));
+    if (sCount) parts.push(sCount === 1 ? wsTr('ws.multiOneStroke', null, '1 traço') : wsTr('ws.multiManyStrokes', { n: sCount }, sCount + ' traços'));
     box.innerHTML =
       '<span class="ws-multi-count">' + parts.join(' · ') + '</span>' +
-      '<button type="button" class="ws-ar-chip danger" data-mact="del" title="Excluir selecionados (Del)">' + svgIcon('trash') + '<span>Excluir</span></button>' +
-      '<button type="button" class="ws-ar-chip" data-mact="clear" title="Limpar seleção (Esc)">' + svgIcon('close') + '<span>Limpar</span></button>';
+      '<button type="button" class="ws-ar-chip danger" data-mact="del" title="' + wsEscape(wsTr('ws.multiDelTitle', null, 'Excluir selecionados (Del)')) + '">' + svgIcon('trash') + '<span>' + wsEscape(wsTr('ws.multiDel', null, 'Excluir')) + '</span></button>' +
+      '<button type="button" class="ws-ar-chip" data-mact="clear" title="' + wsEscape(wsTr('ws.multiClearTitle', null, 'Limpar seleção (Esc)')) + '">' + svgIcon('close') + '<span>' + wsEscape(wsTr('ws.multiClear', null, 'Limpar')) + '</span></button>';
     box.hidden = false;
   },
 
@@ -3208,7 +3424,7 @@ const Workspace = {
 
   beginLink(cardId) {
     const from = cardId || this.selCard;
-    if (!from) { toast('Selecione um cartão para começar a ligação', 'arrow'); return; }
+    if (!from) { toast(wsTr('ws.linkSelectStart', null, 'Selecione um cartão para começar a ligação'), 'arrow'); return; }
     if (this.linkFrom === from) { this.cancelLink(); return; }
     this.cancelLink();
     this.linkFrom = from;
@@ -3216,7 +3432,7 @@ const Workspace = {
     if (node) node.classList.add('link-source');
     if (this.els.shell) this.els.shell.classList.add('linking');
     this.updateTopbar();
-    toast('Clique no cartão de destino · Esc cancela', 'arrow');
+    toast(wsTr('ws.linkPickTarget', null, 'Clique no cartão de destino · Esc cancela'), 'arrow');
   },
 
   cancelLink() {
@@ -3232,13 +3448,13 @@ const Workspace = {
   makeArrow(from, to, opts) {
     if (!from || !to || from === to) return null;
     if (this.board.arrows.some(a => a.from === from && a.to === to)) {
-      toast('Esses cartões já estão ligados', 'arrow');
+      toast(wsTr('ws.linkAlready', null, 'Esses cartões já estão ligados'), 'arrow');
       return null;
     }
     opts = opts || {};
     const a = typeof wsNormalizeArrow === 'function'
-      ? wsNormalizeArrow({ id: uid(), from, to, kind: opts.kind || 'relates', dir: opts.dir || 'forward', label: opts.label || '', color: opts.color || '' })
-      : { id: uid(), from, to, kind: 'relates', dir: 'forward', label: '', color: '' };
+      ? wsNormalizeArrow({ id: uid(), from, to, kind: opts.kind || 'relates', dir: opts.dir || 'forward', label: opts.label || '', color: opts.color || '', startCap: opts.startCap || 'auto', endCap: opts.endCap || 'auto' })
+      : { id: uid(), from, to, kind: 'relates', dir: 'forward', label: '', color: '', startCap: 'auto', endCap: 'auto' };
     this.board.arrows.push(a);
     this.createArrowEl(a);
     this.updateArrow(a.id);
@@ -3291,7 +3507,7 @@ const Workspace = {
     labelGroup.append(labelBg, labelTxt);
 
     const title = document.createElementNS(NS, 'title');
-    title.textContent = 'Ligação — clique para editar ou Delete para remover';
+    title.textContent = wsTr('ws.arrowHoverTip', null, 'Ligação — clique para editar ou Delete para remover');
     g.append(rail, hit, line, labelGroup, title);
 
     const onSelect = (e) => {
@@ -3325,22 +3541,26 @@ const Workspace = {
     const tc = { x: to.x + to.w / 2, y: to.y + to.h / 2 };
     const p1 = this.cardEdge(from, tc.x, tc.y);
     const p2 = this.cardEdge(to, fc.x, fc.y);
-    const dx = p2.x - p1.x;
-    const dy = p2.y - p1.y;
-    let d, c1x, c1y, c2x, c2y;
-    if (Math.abs(dx) >= Math.abs(dy)) {
-      const mx = p1.x + dx / 2;
-      c1x = mx; c1y = p1.y; c2x = mx; c2y = p2.y;
-    } else {
-      const my = p1.y + dy / 2;
-      c1x = p1.x; c1y = my; c2x = p2.x; c2y = my;
+
+    const pairKey = [a.from, a.to].sort().join('|');
+    const pairArrows = this.board.arrows.filter(x => x && [x.from, x.to].sort().join('|') === pairKey);
+    let laneOffset = 0;
+    if (pairArrows.length > 1) {
+      const idx = pairArrows.findIndex(x => x.id === a.id);
+      const rawOffset = (idx - (pairArrows.length - 1) / 2) * 34;
+      laneOffset = a.from > a.to ? -rawOffset : rawOffset;
     }
-    d = 'M ' + p1.x.toFixed(1) + ' ' + p1.y.toFixed(1) +
-      ' C ' + c1x.toFixed(1) + ' ' + c1y.toFixed(1) + ', ' + c2x.toFixed(1) + ' ' + c2y.toFixed(1) +
-      ', ' + p2.x.toFixed(1) + ' ' + p2.y.toFixed(1);
-    if (o.rail) o.rail.setAttribute('d', d);
-    o.hit.setAttribute('d', d);
-    o.line.setAttribute('d', d);
+
+    const geom = typeof wsArrowCurveGeometry === 'function'
+      ? wsArrowCurveGeometry(p1, p2, fc, tc, laneOffset)
+      : {
+          d: 'M ' + p1.x.toFixed(1) + ' ' + p1.y.toFixed(1) + ' L ' + p2.x.toFixed(1) + ' ' + p2.y.toFixed(1),
+          mx: (p1.x + p2.x) / 2,
+          my: (p1.y + p2.y) / 2
+        };
+    if (o.rail) o.rail.setAttribute('d', geom.d);
+    o.hit.setAttribute('d', geom.d);
+    o.line.setAttribute('d', geom.d);
 
     const kind = a.kind || 'relates';
     const isSupport = kind === 'supports';
@@ -3359,33 +3579,31 @@ const Workspace = {
       if (o.rail) o.rail.style.removeProperty('stroke');
     }
 
-    const dir = a.dir || 'forward';
-    if (isSupport) {
-      if (dir === 'both') {
-        o.line.setAttribute('marker-start', 'url(#ws-arrowhead-support)');
-        o.line.setAttribute('marker-end', 'url(#ws-arrowhead-support)');
-      } else if (dir === 'none') {
-        o.line.setAttribute('marker-start', 'url(#ws-support-base)');
-        o.line.setAttribute('marker-end', 'url(#ws-support-base)');
-      } else {
-        o.line.setAttribute('marker-start', 'url(#ws-support-base)');
-        o.line.setAttribute('marker-end', 'url(#ws-arrowhead-support)');
-      }
-    } else if (dir === 'both') {
-      o.line.setAttribute('marker-start', 'url(#ws-arrowhead)');
-      o.line.setAttribute('marker-end', 'url(#ws-arrowhead)');
-    } else if (dir === 'none') {
-      o.line.removeAttribute('marker-start');
-      o.line.removeAttribute('marker-end');
-    } else {
-      o.line.removeAttribute('marker-start');
-      o.line.setAttribute('marker-end', 'url(#ws-arrowhead)');
-    }
+    const caps = typeof wsResolveArrowCaps === 'function'
+      ? wsResolveArrowCaps(a)
+      : { startCap: a.dir === 'both' ? 'arrow' : 'none', endCap: a.dir === 'none' ? 'none' : 'arrow' };
+    const capMarkerUrl = (cap, isStart) => {
+      if (!cap || cap === 'none') return '';
+      if (cap === 'arrow') return isSupport ? 'url(#ws-arrowhead-support)' : 'url(#ws-arrowhead)';
+      if (cap === 'circle') return 'url(#ws-mk-circle)';
+      if (cap === 'circle-open') return 'url(#ws-mk-circle-open)';
+      if (cap === 'square') return 'url(#ws-mk-square)';
+      if (cap === 'square-open') return 'url(#ws-mk-square-open)';
+      if (cap === 'diamond') return 'url(#ws-mk-diamond)';
+      if (cap === 'bar') return (isSupport && isStart) ? 'url(#ws-support-base)' : 'url(#ws-mk-bar)';
+      return '';
+    };
+    const mStart = capMarkerUrl(caps.startCap, true);
+    const mEnd = capMarkerUrl(caps.endCap, false);
+    if (mStart) o.line.setAttribute('marker-start', mStart);
+    else o.line.removeAttribute('marker-start');
+    if (mEnd) o.line.setAttribute('marker-end', mEnd);
+    else o.line.removeAttribute('marker-end');
 
     const lbl = String(a.label || '').trim();
     if (lbl) {
-      const midX = 0.125 * p1.x + 0.375 * c1x + 0.375 * c2x + 0.125 * p2.x;
-      const midY = 0.125 * p1.y + 0.375 * c1y + 0.375 * c2y + 0.125 * p2.y;
+      const midX = geom.mx;
+      const midY = geom.my;
       const boxW = Math.max(40, lbl.length * 6.8 + 16);
       const boxH = 22;
       o.labelGroup.style.display = '';
@@ -3422,20 +3640,20 @@ const Workspace = {
     const kindSwatch = (id) => {
       if (id === 'supports') {
         return '<svg class="ws-ar-swatch" viewBox="0 0 18 8" aria-hidden="true">' +
-          '<path d="M1.5 1.5v5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
-          '<path d="M2 4h11" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>' +
+          '<circle cx="2.5" cy="4" r="1.8" fill="currentColor"/>' +
+          '<path d="M4 4h9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>' +
           '<path d="M11 1.5L14 4l-3 2.5M14 1.5L17 4l-3 2.5" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/>' +
         '</svg>';
       }
       if (id === 'contrast') {
         return '<svg class="ws-ar-swatch" viewBox="0 0 18 8" aria-hidden="true">' +
-          '<path d="M1 4h13" stroke="currentColor" stroke-width="1.4" stroke-dasharray="3.5 2.5" stroke-linecap="round"/>' +
-          '<path d="M13 1.5L16.5 4L13 6.5" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/>' +
+          '<path d="M2 1.5v5M2 4h14M16 1.5v5" stroke="currentColor" stroke-width="1.4" stroke-dasharray="3.5 2.5" stroke-linecap="round"/>' +
         '</svg>';
       }
       if (id === 'sequence') {
         return '<svg class="ws-ar-swatch" viewBox="0 0 18 8" aria-hidden="true">' +
-          '<path d="M1 4h13" stroke="currentColor" stroke-width="1.5" stroke-dasharray="1.4 2.6" stroke-linecap="round"/>' +
+          '<circle cx="2.5" cy="4" r="1.6" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
+          '<path d="M4.5 4h9.5" stroke="currentColor" stroke-width="1.5" stroke-dasharray="1.4 2.6" stroke-linecap="round"/>' +
           '<path d="M13 1.5L16.5 4L13 6.5" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/>' +
         '</svg>';
       }
@@ -3446,24 +3664,35 @@ const Workspace = {
     };
 
     const kinds = (typeof WS_ARROW_KINDS !== 'undefined' ? WS_ARROW_KINDS : [])
-      .map(k => '<button type="button" class="ws-ar-chip' + ((a.kind || 'relates') === k.id ? ' active' : '') + '" data-arkind="' + k.id + '">' + kindSwatch(k.id) + '<span>' + k.label + '</span></button>')
+      .map(k => '<button type="button" class="ws-ar-chip' + ((a.kind || 'relates') === k.id ? ' active' : '') + '" data-arkind="' + k.id + '">' + kindSwatch(k.id) + '<span>' + wsEscape(wsTr('ws.arrow.' + k.id, null, k.label)) + '</span></button>')
       .join('');
     const dirs = (typeof WS_ARROW_DIRS !== 'undefined' ? WS_ARROW_DIRS : [])
-      .map(d => '<button type="button" class="ws-ar-chip' + ((a.dir || 'forward') === d.id ? ' active' : '') + '" data-ardir="' + d.id + '">' + d.label + '</button>')
+      .map(d => '<button type="button" class="ws-ar-chip' + ((a.dir || 'forward') === d.id ? ' active' : '') + '" data-ardir="' + d.id + '" title="' + wsEscape(wsTr('ws.arrow.' + d.id, null, d.label)) + '">' + d.label + '</button>')
       .join('');
     const colors = (typeof WS_ARROW_COLORS !== 'undefined' ? WS_ARROW_COLORS : [])
-      .map(c => '<button type="button" class="ws-sel-dot' + ((a.color || '') === c.value ? ' active' : '') + '" data-arcolor="' + c.value + '" title="' + c.label + '" style="background:' + (c.value || 'var(--accent)') + '"></button>')
+      .map(c => {
+        const cName = wsColorLabel(c);
+        return '<button type="button" class="ws-sel-dot' + ((a.color || '') === c.value ? ' active' : '') + '" data-arcolor="' + c.value + '" title="' + wsEscape(cName) + '" style="background:' + (c.value || 'var(--accent)') + '"></button>';
+      })
       .join('');
+    const capOptsHtml = (curVal) => WS_ARROW_CAP_OPTS.map(opt =>
+      '<option value="' + opt.id + '"' + ((curVal || 'auto') === opt.id ? ' selected' : '') + '>' + wsEscape(wsTr(opt.key, null, opt.def)) + '</option>'
+    ).join('');
 
     bar.innerHTML =
-      '<input type="text" class="ws-ar-input" data-arlabel value="' + wsEscape(a.label || '') + '" placeholder="Rótulo da ligação (ex.: causa, resume)…" maxlength="48" aria-label="Rótulo da ligação">' +
+      '<input type="text" class="ws-ar-input" data-arlabel value="' + wsEscape(a.label || '') + '" placeholder="' + wsEscape(wsTr('ws.arrowLabelPh', null, 'Rótulo da ligação (ex.: causa, resume)…')) + '" maxlength="48" aria-label="' + wsEscape(wsTr('ws.arrowLabelAria', null, 'Rótulo da ligação')) + '">' +
       '<span class="ws-ink-sep"></span>' +
       '<div class="ws-ar-group">' + kinds + '</div>' +
       '<span class="ws-ink-sep"></span>' +
-      '<div class="ws-ar-group">' + dirs + '<button type="button" class="ws-ar-chip" data-arinvert title="Inverter direção">' + svgIcon('swap') + '</button></div>' +
+      '<div class="ws-ar-group">' + dirs + '<button type="button" class="ws-ar-chip" data-arinvert title="' + wsEscape(wsTr('ws.arrowInvertTitle', null, 'Inverter direção')) + '">' + svgIcon('swap') + '</button></div>' +
+      '<span class="ws-ink-sep"></span>' +
+      '<div class="ws-ar-caps" title="' + wsEscape(wsTr('ws.arrow.capsTitle', null, 'Pontas das extremidades')) + '">' +
+        '<label class="ws-ar-capwrap"><span>' + wsEscape(wsTr('ws.arrow.startCap', null, 'Início')) + '</span><select class="ws-ar-capselect" data-arcap="start" aria-label="' + wsEscape(wsTr('ws.arrow.startCap', null, 'Início')) + '">' + capOptsHtml(a.startCap || 'auto') + '</select></label>' +
+        '<label class="ws-ar-capwrap"><span>' + wsEscape(wsTr('ws.arrow.endCap', null, 'Fim')) + '</span><select class="ws-ar-capselect" data-arcap="end" aria-label="' + wsEscape(wsTr('ws.arrow.endCap', null, 'Fim')) + '">' + capOptsHtml(a.endCap || 'auto') + '</select></label>' +
+      '</div>' +
       '<span class="ws-ink-sep"></span>' +
       '<div class="ws-ar-group">' + colors + '</div>' +
-      '<button type="button" class="ws-card-btn danger" data-ardel title="Remover ligação (Delete)">' + svgIcon('trash') + '</button>';
+      '<button type="button" class="ws-card-btn danger" data-ardel title="' + wsEscape(wsTr('ws.arrowDelTitle', null, 'Remover ligação (Delete)')) + '">' + svgIcon('trash') + '</button>';
     bar.hidden = false;
 
     const inp = bar.querySelector('[data-arlabel]');
@@ -3482,6 +3711,17 @@ const Workspace = {
         }
       });
     }
+    bar.querySelectorAll('[data-arcap]').forEach(sel => {
+      sel.addEventListener('pointerdown', (e) => e.stopPropagation());
+      sel.addEventListener('change', () => {
+        const side = sel.dataset.arcap;
+        const val = typeof wsNormalizeArrowCap === 'function' ? wsNormalizeArrowCap(sel.value) : sel.value;
+        if (side === 'start') a.startCap = val;
+        else a.endCap = val;
+        this.updateArrow(a.id);
+        this.scheduleSave();
+      });
+    });
     bar.onpointerdown = (e) => e.stopPropagation();
     bar.onclick = (e) => {
       e.stopPropagation();
@@ -3505,7 +3745,11 @@ const Workspace = {
         const tmp = a.from;
         a.from = a.to;
         a.to = tmp;
+        const tmpCap = a.startCap;
+        a.startCap = a.endCap || 'auto';
+        a.endCap = tmpCap || 'auto';
         this.updateArrow(a.id);
+        this.renderArrowTools();
         this.scheduleSave();
         return;
       }
@@ -3692,7 +3936,7 @@ const Workspace = {
     const token = uid();
     this.pdfTokens.set(card.id, token);
     loading.hidden = false;
-    loading.textContent = 'carregando PDF';
+    loading.textContent = wsTr('ws.pdf.loading', null, 'carregando PDF');
 
     try {
       const doc = await this.ensurePdfDoc(card.pdfId);
@@ -3760,7 +4004,7 @@ const Workspace = {
     } catch (err) {
       if (this.pdfTokens.get(card.id) === token) {
         loading.hidden = false;
-        loading.textContent = 'Não foi possível abrir este PDF';
+        loading.textContent = wsTr('ws.pdf.loadErr', null, 'Não foi possível abrir este PDF');
       }
     }
   },
@@ -4016,7 +4260,7 @@ const Workspace = {
     input.min = 1;
     input.max = total;
     input.value = String(card.page || 1);
-    input.setAttribute('aria-label', 'Ir para a página');
+    input.setAttribute('aria-label', wsTr('ws.pdf.gotoPageAria', null, 'Ir para a página'));
     pageBtn.hidden = true;
     pageBtn.after(input);
     input.focus();
@@ -4082,24 +4326,25 @@ const Workspace = {
     const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
     if (!isPdf) return;
     if (this.board.pdfs.length >= 5) {
-      toast('Limite de 5 PDFs no quadro', 'file');
+      toast(wsTr('ws.pdf.limitToast', null, 'Limite de 5 PDFs no quadro'), 'file');
       return;
     }
     if (file.size > 20 * 1024 * 1024) {
+      const mb = (file.size / 1048576).toFixed(1);
       const proceed = await this.openConfirm({
-        title: 'PDF grande (' + (file.size / 1048576).toFixed(1) + ' MB)',
-        message: 'Arquivos maiores podem deixar o quadro mais lento. Deseja adicionar mesmo assim?',
-        confirmLabel: 'Adicionar'
+        title: wsTr('ws.pdf.largeTitle', { mb }, 'PDF grande (' + mb + ' MB)'),
+        message: wsTr('ws.pdf.largeMsg', null, 'Arquivos maiores podem deixar o quadro mais lento. Deseja adicionar mesmo assim?'),
+        confirmLabel: wsTr('ws.pdf.largeConfirm', null, 'Adicionar')
       });
       if (!proceed) return;
     }
     let buf;
     try { buf = await file.arrayBuffer(); }
-    catch (e) { toast('Não foi possível ler o PDF', 'close'); return; }
+    catch (e) { toast(wsTr('ws.pdf.readErr', null, 'Não foi possível ler o PDF'), 'close'); return; }
 
     const id = uid();
     try { await WorkspaceDB.putFile(id, buf); }
-    catch (e) { toast('Sem espaço para salvar este PDF', 'close'); return; }
+    catch (e) { toast(wsTr('ws.pdf.saveErr', null, 'Sem espaço para salvar este PDF'), 'close'); return; }
 
     const name = (file.name || 'Documento.pdf').replace(/\.pdf$/i, '');
     this.board.pdfs.push({ id, name, size: file.size, pages: 0, highlights: [] });
@@ -4129,7 +4374,7 @@ const Workspace = {
     await this.flushSave();
     this.select(card.id);
     this.renderPdfCard(card, true);
-    toast('PDF adicionado ao quadro', 'file');
+    toast(wsTr('ws.pdf.addedToast', null, 'PDF adicionado ao quadro'), 'file');
   },
 
   /* -------- imagens e prints -------- */
@@ -4185,16 +4430,16 @@ const Workspace = {
     const isImg = /^image\//.test(file.type || '') || /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(file.name || '');
     if (!isImg) return;
     if ((this.board.images || []).length >= 25) {
-      toast('Limite de 25 imagens no quadro', 'image');
+      toast(wsTr('ws.img.limit', null, 'Limite de 25 imagens no quadro'), 'image');
       return;
     }
     if (file.size > 15 * 1024 * 1024) {
-      toast('Imagem muito grande — use até 15 MB', 'image');
+      toast(wsTr('ws.img.tooBig', null, 'Imagem muito grande — use até 15 MB'), 'image');
       return;
     }
     let dataUrl;
     try { dataUrl = await readFileAsDataURL(file); }
-    catch (e) { toast('Não foi possível ler a imagem', 'close'); return; }
+    catch (e) { toast(wsTr('ws.img.readErr', null, 'Não foi possível ler a imagem'), 'close'); return; }
 
     const dims = await new Promise((resolve) => {
       const probe = new Image();
@@ -4205,10 +4450,10 @@ const Workspace = {
 
     const id = uid();
     try { await WorkspaceDB.putFile(id, dataUrl); }
-    catch (e) { toast('Sem espaço para salvar a imagem', 'close'); return; }
+    catch (e) { toast(wsTr('ws.img.saveErr', null, 'Sem espaço para salvar a imagem'), 'close'); return; }
 
     this.imgUrls.set(id, dataUrl);
-    const rawName = file.name && !/^image\./i.test(file.name) ? file.name.replace(/\.[^.]+$/, '') : (opts.fromPaste ? 'Print colado' : 'Imagem');
+    const rawName = file.name && !/^image\./i.test(file.name) ? file.name.replace(/\.[^.]+$/, '') : (opts.fromPaste ? wsTr('ws.img.pastedName', null, 'Print colado') : wsTr('ws.card.image', null, 'Imagem'));
     this.board.images = this.board.images || [];
     this.board.images.push({ id, name: rawName, size: file.size || 0, natW: dims.w, natH: dims.h });
 
@@ -4234,7 +4479,7 @@ const Workspace = {
     await this.flushSave();
     this.select(card.id);
     this.renderImageCard(card);
-    toast(opts.fromPaste ? 'Print colado no quadro' : 'Imagem adicionada ao quadro', 'image');
+    toast(opts.fromPaste ? wsTr('ws.img.pasted', null, 'Print colado no quadro') : wsTr('ws.img.added', null, 'Imagem adicionada ao quadro'), 'image');
   },
 
   onImagePointerDown(e, card, body) {
@@ -4265,7 +4510,7 @@ const Workspace = {
   revealSource(noteCard) {
     if (!noteCard.source) return;
     const pdf = this.board.cards.find(c => c.type === 'pdf' && c.pdfId === noteCard.source.pdfId);
-    if (!pdf) { toast('O PDF de origem não está mais no quadro', 'file'); return; }
+    if (!pdf) { toast(wsTr('ws.pdf.sourceMissing', null, 'O PDF de origem não está mais no quadro'), 'file'); return; }
     pdf.page = Math.max(1, noteCard.source.page || 1);
     this.pdfRendered.delete(pdf.id);
     this.renderPdfCard(pdf, true);
@@ -4308,17 +4553,18 @@ const Workspace = {
     if (!meta) return;
     const list = (meta.highlights || []).filter(h => h.page === card.page);
     if (!list.length) {
-      toast('Nenhum destaque nesta página', 'highlight');
+      toast(wsTr('ws.pdf.hlNone', null, 'Nenhum destaque nesta página'), 'highlight');
       return;
     }
-    let html = '<p class="ws-pop-title">Destaques · p. ' + card.page + '</p><div class="ws-hl-list">';
+    const delHlLabel = wsTr('ws.pdf.hlDel', null, 'Remover destaque');
+    let html = '<p class="ws-pop-title">' + wsEscape(wsTr('ws.pdf.hlHead', { page: card.page }, 'Destaques · p. ' + card.page)) + '</p><div class="ws-hl-list">';
     list.forEach(h => {
       html += '<div class="ws-hl-item">' +
         '<i style="background:' + h.color + '"></i>' +
-        '<span title="' + wsEscape(h.text) + '">' + wsEscape((h.text || 'trecho').slice(0, 72)) + '</span>' +
-        '<button data-hldel="' + h.id + '" title="Remover destaque">' + svgIcon('trash') + '</button></div>';
+        '<span title="' + wsEscape(h.text) + '">' + wsEscape((h.text || '…').slice(0, 72)) + '</span>' +
+        '<button data-hldel="' + h.id + '" title="' + wsEscape(delHlLabel) + '">' + svgIcon('trash') + '</button></div>';
     });
-    html += '</div><p class="ws-pop-note">Os destaques ficam salvos com o PDF.</p>';
+    html += '</div><p class="ws-pop-note">' + wsEscape(wsTr('ws.pdf.hlNote', null, 'Os destaques ficam salvos com o PDF.')) + '</p>';
     const pop = this.openCustomPopover(html);
     pop.addEventListener('click', (e) => {
       const b = e.target.closest('[data-hldel]');
@@ -4496,7 +4742,7 @@ const Workspace = {
         if (clean.trim()) {
           e.preventDefault();
           this.addNote({ text: clean, w: 280, h: 170, focus: false });
-          toast('Nota colada na área de trabalho', 'file');
+          toast(wsTr('ws.note.pastedToast', null, 'Nota colada na área de trabalho'), 'file');
         }
       }
     });
@@ -4600,6 +4846,7 @@ const Workspace = {
     document.addEventListener('keyup', (e) => {
       if (e.key === 'Shift') {
         if (this.cardDrag) this.applyCardDragPositions(this.cardDrag, false);
+        else if (this.cardResize) this.applyCardResize(this.cardResize, false);
         else this.hideSnapOverlay();
       }
       if ((e.code === 'Space' || e.key === 'Alt') && this.inkSpacePan) {
@@ -4840,21 +5087,32 @@ const Workspace = {
     bar.classList.toggle('vertical', isVert);
     bar.classList.toggle('collapsed', isCollapsed);
 
-    const grip = '<button type="button" class="ws-ink-grip" title="Arrastar barra de escrita (posição livre)" aria-label="Arrastar barra de escrita">' + svgIcon('grip') + '</button>';
+    const dragGripTitle = wsTr('ws.ink.dragGrip', null, 'Arrastar barra de escrita (posição livre)');
+    const dragGripAria = wsTr('ws.ink.gripAria', null, 'Arrastar barra de escrita');
+    const grip = '<button type="button" class="ws-ink-grip" title="' + wsEscape(dragGripTitle) + '" aria-label="' + wsEscape(dragGripAria) + '">' + svgIcon('grip') + '</button>';
+
+    const penLabel = wsTr('ws.ink.pen', null, 'Caneta');
+    const markerLabel = wsTr('ws.ink.marker', null, 'Marcador');
+    const eraserLabel = wsTr('ws.ink.eraser', null, 'Borracha');
+    const moveLabel = wsTr('ws.ink.move', null, 'Mover');
+    const doneLabel = wsTr('ws.ink.done', null, 'Concluir');
+    const doneTip = wsTr('ws.ink.doneTitle', null, 'Sair do modo de escrita (Esc)');
+    const settingsTip = wsTr('ws.ink.settingsTitle', null, 'Configurações de escrita');
 
     if (isCollapsed) {
       const toolIcon = cfg.tool === 'eraser' ? 'eraser' : (cfg.tool === 'marker' ? 'highlight' : 'pen');
       const expandIcon = isVert ? 'chevR' : 'chevD';
+      const expandTip = wsTr('ws.ink.expand', null, 'Expandir barra');
       bar.innerHTML =
         grip +
-        '<div class="ws-ink-badge" title="Ferramenta e cor ativas">' +
+        '<div class="ws-ink-badge" title="' + wsEscape(wsTr('ws.ink.activeBadge', null, 'Ferramenta e cor ativas')) + '">' +
           svgIcon(toolIcon) +
           (cfg.tool !== 'eraser' ? '<span class="ws-ink-badge-dot" style="background:' + cfg.color + '"></span>' : '') +
-          '<span>' + (cfg.tool === 'eraser' ? 'Borracha' : (cfg.tool === 'marker' ? 'Marcador' : 'Caneta')) + '</span>' +
+          '<span>' + wsEscape(cfg.tool === 'eraser' ? eraserLabel : (cfg.tool === 'marker' ? markerLabel : penLabel)) + '</span>' +
         '</div>' +
-        '<button type="button" class="ws-ink-btn' + (this.inkSettingsOpen ? ' active' : '') + '" data-inkact="settings" title="Configurações de escrita" aria-expanded="' + (this.inkSettingsOpen ? 'true' : 'false') + '">' + svgIcon('sliders') + '</button>' +
-        '<button type="button" class="ws-ink-btn" data-inkact="collapse" title="Expandir ferramentas" aria-label="Expandir barra">' + svgIcon(expandIcon) + '</button>' +
-        '<button type="button" class="ws-ink-btn" data-inkact="done" title="Sair do modo de escrita (Esc)" aria-label="Concluir">' + svgIcon('close') + '</button>';
+        '<button type="button" class="ws-ink-btn' + (this.inkSettingsOpen ? ' active' : '') + '" data-inkact="settings" title="' + wsEscape(settingsTip) + '" aria-expanded="' + (this.inkSettingsOpen ? 'true' : 'false') + '">' + svgIcon('sliders') + '</button>' +
+        '<button type="button" class="ws-ink-btn" data-inkact="collapse" title="' + wsEscape(expandTip) + '" aria-label="' + wsEscape(expandTip) + '">' + svgIcon(expandIcon) + '</button>' +
+        '<button type="button" class="ws-ink-btn" data-inkact="done" title="' + wsEscape(doneTip) + '" aria-label="' + wsEscape(doneLabel) + '">' + svgIcon('close') + '</button>';
       if (!bar.hidden) {
         this.positionInkBar();
         if (this.inkSettingsOpen) this.positionInkSettings();
@@ -4863,39 +5121,46 @@ const Workspace = {
     }
 
     const colors = (typeof INK_COLORS !== 'undefined' ? INK_COLORS : [])
-      .map(c => '<button type="button" class="ws-ink-dot' + (cfg.color.toLowerCase() === c.value.toLowerCase() && cfg.tool !== 'eraser' ? ' active' : '') + '" data-inkcolor="' + c.value + '" title="' + c.label + '" aria-label="Cor ' + c.label + '" style="background:' + c.value + '"></button>')
+      .map(c => {
+        const lbl = wsColorLabel(c);
+        return '<button type="button" class="ws-ink-dot' + (cfg.color.toLowerCase() === c.value.toLowerCase() && cfg.tool !== 'eraser' ? ' active' : '') + '" data-inkcolor="' + c.value + '" title="' + wsEscape(lbl) + '" aria-label="' + wsEscape(wsTr('ws.noteColorLabel', { label: lbl }, 'Cor ' + lbl)) + '" style="background:' + c.value + '"></button>';
+      })
       .join('');
     const sizes = (typeof INK_SIZES !== 'undefined' ? INK_SIZES : [])
-      .map(s => '<button type="button" class="ws-ink-size' + (Math.abs(cfg.size - s.size) < 0.2 ? ' active' : '') + '" data-inksize="' + s.size + '" title="Espessura ' + s.label + '">' + (isVert ? s.label[0] : s.label) + '</button>')
+      .map(s => {
+        const lbl = wsTr('ws.ink.size.' + s.id, null, s.label);
+        return '<button type="button" class="ws-ink-size' + (Math.abs(cfg.size - s.size) < 0.2 ? ' active' : '') + '" data-inksize="' + s.size + '" title="' + wsEscape(wsTr('ws.ink.sizeTip', { label: lbl }, 'Espessura ' + lbl)) + '">' + wsEscape(isVert ? lbl[0] : lbl) + '</button>';
+      })
       .join('');
     const hasStrokes = !!(this.board && this.board.strokes && this.board.strokes.length);
     const collapseIcon = isVert ? 'chevL' : 'chevU';
+    const collapseTip = wsTr('ws.ink.collapse', null, 'Retrair barra');
 
     const panReady = !!(this.inkSpacePan || this.inkHandLock);
     bar.innerHTML =
       grip +
       '<div class="ws-ink-group">' +
-        '<button type="button" class="ws-ink-btn' + (!panReady && cfg.tool === 'pen' ? ' active' : '') + '" data-inktool="pen" title="Caneta (suporta mesa digitalizadora)">' + svgIcon('pen') + '<span>Caneta</span></button>' +
-        '<button type="button" class="ws-ink-btn' + (!panReady && cfg.tool === 'marker' ? ' active' : '') + '" data-inktool="marker" title="Marca-texto">' + svgIcon('highlight') + '<span>Marcador</span></button>' +
-        '<button type="button" class="ws-ink-btn' + (!panReady && cfg.tool === 'eraser' ? ' active' : '') + '" data-inktool="eraser" title="Borracha">' + svgIcon('eraser') + '<span>Borracha</span></button>' +
-        '<button type="button" class="ws-ink-btn' + (panReady ? ' active' : '') + '" data-inkact="hand" title="Destravar mouse para arrastar (segure Espaço ou Alt, ou tecle H)" aria-pressed="' + (panReady ? 'true' : 'false') + '">' + svgIcon('hand') + '<span>Mover</span></button>' +
+        '<button type="button" class="ws-ink-btn' + (!panReady && cfg.tool === 'pen' ? ' active' : '') + '" data-inktool="pen" title="' + wsEscape(wsTr('ws.ink.penTip', null, 'Caneta (suporta mesa digitalizadora)')) + '">' + svgIcon('pen') + '<span>' + wsEscape(penLabel) + '</span></button>' +
+        '<button type="button" class="ws-ink-btn' + (!panReady && cfg.tool === 'marker' ? ' active' : '') + '" data-inktool="marker" title="' + wsEscape(wsTr('ws.ink.markerTip', null, 'Marca-texto')) + '">' + svgIcon('highlight') + '<span>' + wsEscape(markerLabel) + '</span></button>' +
+        '<button type="button" class="ws-ink-btn' + (!panReady && cfg.tool === 'eraser' ? ' active' : '') + '" data-inktool="eraser" title="' + wsEscape(wsTr('ws.ink.eraserTip', null, 'Borracha')) + '">' + svgIcon('eraser') + '<span>' + wsEscape(eraserLabel) + '</span></button>' +
+        '<button type="button" class="ws-ink-btn' + (panReady ? ' active' : '') + '" data-inkact="hand" title="' + wsEscape(wsTr('ws.ink.moveTip', null, 'Destravar mouse para arrastar (segure Espaço ou Alt, ou tecle H)')) + '" aria-pressed="' + (panReady ? 'true' : 'false') + '">' + svgIcon('hand') + '<span>' + wsEscape(moveLabel) + '</span></button>' +
       '</div>' +
       '<span class="ws-ink-sep"></span>' +
       '<div class="ws-ink-colors">' +
         colors +
-        '<input type="color" class="ws-ink-pick" data-inkpick value="' + cfg.color + '" title="Outra cor">' +
+        '<input type="color" class="ws-ink-pick" data-inkpick value="' + cfg.color + '" title="' + wsEscape(wsTr('ws.ink.otherColor', null, 'Outra cor')) + '">' +
       '</div>' +
       '<span class="ws-ink-sep"></span>' +
       '<div class="ws-ink-group">' + sizes + '</div>' +
       '<span class="ws-ink-sep"></span>' +
       '<div class="ws-ink-group">' +
-        '<button type="button" class="ws-ink-btn' + (this.inkSettingsOpen ? ' active' : '') + '" data-inkact="settings" title="Precisão, pressão, ponta e disposição da barra" aria-expanded="' + (this.inkSettingsOpen ? 'true' : 'false') + '">' + svgIcon('sliders') + '<span>Ajustes</span></button>' +
-        '<button type="button" class="ws-ink-btn" data-inkact="undo" title="Desfazer traço (Ctrl+Z)"' + (this.inkUndo.length ? '' : ' disabled') + '>' + svgIcon('undo') + '</button>' +
-        '<button type="button" class="ws-ink-btn" data-inkact="redo" title="Refazer traço (Ctrl+Y)"' + (this.inkRedo.length ? '' : ' disabled') + '>' + svgIcon('redo') + '</button>' +
-        '<button type="button" class="ws-ink-btn" data-inkact="clear" title="Apagar todos os desenhos"' + (hasStrokes ? '' : ' disabled') + '>' + svgIcon('trash') + '</button>' +
-        '<button type="button" class="ws-ink-btn" data-inkact="collapse" title="Retrair barra" aria-label="Retrair barra">' + svgIcon(collapseIcon) + '</button>' +
+        '<button type="button" class="ws-ink-btn' + (this.inkSettingsOpen ? ' active' : '') + '" data-inkact="settings" title="' + wsEscape(wsTr('ws.ink.toolsTip', null, 'Precisão, pressão, ponta e disposição da barra')) + '" aria-expanded="' + (this.inkSettingsOpen ? 'true' : 'false') + '">' + svgIcon('sliders') + '<span>' + wsEscape(wsTr('ws.ink.tools', null, 'Ajustes')) + '</span></button>' +
+        '<button type="button" class="ws-ink-btn" data-inkact="undo" title="' + wsEscape(wsTr('ws.ink.undoTip', null, 'Desfazer traço (Ctrl+Z)')) + '"' + (this.inkUndo.length ? '' : ' disabled') + '>' + svgIcon('undo') + '</button>' +
+        '<button type="button" class="ws-ink-btn" data-inkact="redo" title="' + wsEscape(wsTr('ws.ink.redoTip', null, 'Refazer traço (Ctrl+Y)')) + '"' + (this.inkRedo.length ? '' : ' disabled') + '>' + svgIcon('redo') + '</button>' +
+        '<button type="button" class="ws-ink-btn" data-inkact="clear" title="' + wsEscape(wsTr('ws.ink.clearTip', null, 'Apagar todos os desenhos')) + '"' + (hasStrokes ? '' : ' disabled') + '>' + svgIcon('trash') + '</button>' +
+        '<button type="button" class="ws-ink-btn" data-inkact="collapse" title="' + wsEscape(collapseTip) + '" aria-label="' + wsEscape(collapseTip) + '">' + svgIcon(collapseIcon) + '</button>' +
       '</div>' +
-      '<button type="button" class="ws-ink-done" data-inkact="done" title="Sair do modo de escrita (Esc)" aria-label="Concluir">' + (isVert ? svgIcon('check') : 'Concluir') + '</button>';
+      '<button type="button" class="ws-ink-done" data-inkact="done" title="' + wsEscape(doneTip) + '" aria-label="' + wsEscape(doneLabel) + '">' + (isVert ? svgIcon('check') : wsEscape(doneLabel)) + '</button>';
 
     if (!bar.hidden) {
       this.positionInkBar();
@@ -4928,60 +5193,62 @@ const Workspace = {
     if (!box) return;
     if (!this.inkSettingsOpen) { box.hidden = true; return; }
     const cfg = this.inkCfg();
-    const nibs = (typeof INK_NIBS !== 'undefined' ? INK_NIBS : []).map(n =>
-      '<button type="button" class="ws-ink-nib' + (cfg.nib === n.id ? ' active' : '') + '" data-inknib="' + n.id + '" title="' + n.desc + '">' +
-        this.nibPreviewSvg(n.id) + '<span>' + n.label + '</span></button>'
-    ).join('');
+    const nibs = (typeof INK_NIBS !== 'undefined' ? INK_NIBS : []).map(n => {
+      const lbl = wsTr('ws.ink.nib.' + n.id, null, n.label);
+      const desc = wsTr('ws.ink.nibDesc.' + n.id, null, n.desc);
+      return '<button type="button" class="ws-ink-nib' + (cfg.nib === n.id ? ' active' : '') + '" data-inknib="' + n.id + '" title="' + wsEscape(desc) + '">' +
+        this.nibPreviewSvg(n.id) + '<span>' + wsEscape(lbl) + '</span></button>';
+    }).join('');
     const cursors = [
-      { id: 'auto', label: 'Auto' },
-      { id: 'dot', label: 'Ponto' },
-      { id: 'cross', label: 'Cruz' }
+      { id: 'auto', label: wsTr('ws.ink.curAuto', null, 'Auto') },
+      { id: 'dot', label: wsTr('ws.ink.curDot', null, 'Ponto') },
+      { id: 'cross', label: wsTr('ws.ink.curCross', null, 'Cruz') }
     ].map(c =>
-      '<button type="button" class="ws-ink-segbtn' + (cfg.cursorShape === c.id ? ' active' : '') + '" data-inkcur="' + c.id + '">' + c.label + '</button>'
+      '<button type="button" class="ws-ink-segbtn' + (cfg.cursorShape === c.id ? ' active' : '') + '" data-inkcur="' + c.id + '">' + wsEscape(c.label) + '</button>'
     ).join('');
     const oris = [
-      { id: 'horizontal', label: 'Horizontal' },
-      { id: 'vertical', label: 'Vertical' }
+      { id: 'horizontal', label: wsTr('ws.ink.oriHoriz', null, 'Horizontal') },
+      { id: 'vertical', label: wsTr('ws.ink.oriVert', null, 'Vertical') }
     ].map(o =>
-      '<button type="button" class="ws-ink-segbtn' + (cfg.orientation === o.id ? ' active' : '') + '" data-inkori="' + o.id + '">' + o.label + '</button>'
+      '<button type="button" class="ws-ink-segbtn' + (cfg.orientation === o.id ? ' active' : '') + '" data-inkori="' + o.id + '">' + wsEscape(o.label) + '</button>'
     ).join('');
     const poses = (typeof INK_BAR_POSITIONS !== 'undefined' ? INK_BAR_POSITIONS : []).map(p =>
-      '<button type="button" class="ws-ink-segbtn' + (cfg.position === p.id ? ' active' : '') + '" data-inkpos="' + p.id + '">' + p.label + '</button>'
+      '<button type="button" class="ws-ink-segbtn' + (cfg.position === p.id ? ' active' : '') + '" data-inkpos="' + p.id + '">' + wsEscape(wsTr('ws.ink.pos.' + p.id, null, p.label)) + '</button>'
     ).join('');
 
     box.innerHTML =
       '<div class="ws-ink-sethead">' +
-        '<p class="ws-pop-title">Ajustes da escrita</p>' +
-        '<button type="button" class="ws-card-btn" data-inksetclose title="Fechar">' + svgIcon('close') + '</button>' +
+        '<p class="ws-pop-title">' + wsEscape(wsTr('ws.ink.settings', null, 'Ajustes da escrita')) + '</p>' +
+        '<button type="button" class="ws-card-btn" data-inksetclose title="' + wsEscape(wsTr('ws.ink.close', null, 'Fechar')) + '">' + svgIcon('close') + '</button>' +
       '</div>' +
       '<div class="ws-tset-group" style="margin-top:8px;padding-top:10px">' +
-        '<h4>Ponta da caneta</h4>' +
-        '<p class="ws-tset-hint">Muda o formato e a resposta direcional do traço.</p>' +
+        '<h4>' + wsEscape(wsTr('ws.ink.nibSub', null, 'Ponta da caneta')) + '</h4>' +
+        '<p class="ws-tset-hint">' + wsEscape(wsTr('ws.ink.nibHint', null, 'Muda o formato e a resposta direcional do traço.')) + '</p>' +
         '<div class="ws-ink-nibs">' + nibs + '</div>' +
       '</div>' +
       '<div class="ws-tset-group">' +
-        '<h4>Precisão e pressão</h4>' +
+        '<h4>' + wsEscape(wsTr('ws.ink.pressSmoothSub', null, 'Precisão e pressão')) + '</h4>' +
         '<label class="ws-range-row">' +
-          '<span>Precisão / suavização <b data-inkval="smoothing">' + cfg.smoothing + '%</b></span>' +
+          '<span>' + wsEscape(wsTr('ws.ink.smoothVal', null, 'Precisão / suavização')) + ' <b data-inkval="smoothing">' + cfg.smoothing + '%</b></span>' +
           '<input type="range" min="0" max="100" step="5" data-inkrange="smoothing" value="' + cfg.smoothing + '">' +
         '</label>' +
         '<label class="ws-range-row">' +
-          '<span>Variação de pressão <b data-inkval="pressureVar">' + cfg.pressureVar + '%</b></span>' +
+          '<span>' + wsEscape(wsTr('ws.ink.pressVal', null, 'Variação de pressão')) + ' <b data-inkval="pressureVar">' + cfg.pressureVar + '%</b></span>' +
           '<input type="range" min="0" max="100" step="5" data-inkrange="pressureVar" value="' + cfg.pressureVar + '">' +
         '</label>' +
       '</div>' +
       '<div class="ws-tset-group">' +
-        '<h4>Ponteiro</h4>' +
+        '<h4>' + wsEscape(wsTr('ws.ink.cursorSub', null, 'Ponteiro')) + '</h4>' +
         '<div class="ws-ink-seg">' + cursors + '</div>' +
       '</div>' +
       '<div class="ws-tset-group">' +
-        '<h4>Disposição da barra</h4>' +
-        '<p class="ws-tset-hint">Alinhe nos topos, laterais ou arraste pela alça.</p>' +
+        '<h4>' + wsEscape(wsTr('ws.ink.barLayoutSub', null, 'Disposição da barra')) + '</h4>' +
+        '<p class="ws-tset-hint">' + wsEscape(wsTr('ws.ink.barLayoutHint', null, 'Alinhe nos topos, laterais ou arraste pela alça.')) + '</p>' +
         '<div class="ws-ink-seg">' + oris + '</div>' +
         '<div class="ws-ink-seg">' + poses + '</div>' +
         '<div class="ws-ink-seg">' +
-          '<button type="button" class="ws-ink-segbtn' + (!cfg.collapsed ? ' active' : '') + '" data-inkcol="0">Expandida</button>' +
-          '<button type="button" class="ws-ink-segbtn' + (cfg.collapsed ? ' active' : '') + '" data-inkcol="1">Retraída</button>' +
+          '<button type="button" class="ws-ink-segbtn' + (!cfg.collapsed ? ' active' : '') + '" data-inkcol="0">' + wsEscape(wsTr('ws.ink.expanded', null, 'Expandida')) + '</button>' +
+          '<button type="button" class="ws-ink-segbtn' + (cfg.collapsed ? ' active' : '') + '" data-inkcol="1">' + wsEscape(wsTr('ws.ink.collapsed', null, 'Retraída')) + '</button>' +
         '</div>' +
       '</div>';
     box.hidden = false;
@@ -5136,9 +5403,9 @@ const Workspace = {
   async clearInk() {
     if (!this.board || !(this.board.strokes && this.board.strokes.length)) return;
     const ok = await this.openConfirm({
-      title: 'Limpar todos os desenhos?',
-      message: 'Isso apagará todos os traços à mão livre do quadro.',
-      confirmLabel: 'Limpar',
+      title: wsTr('ws.ink.clearTitle', null, 'Limpar todos os desenhos?'),
+      message: wsTr('ws.ink.clearMsg', null, 'Isso apagará todos os traços à mão livre do quadro.'),
+      confirmLabel: wsTr('ws.ink.clearConfirm', null, 'Limpar'),
       danger: true
     });
     if (!ok) return;
@@ -5595,14 +5862,9 @@ const Workspace = {
     if (this.cardResize) {
       const r = this.cardResize;
       const scale = this.board.view.scale;
-      r.card.w = clamp(r.origW + (e.clientX - r.startX) / scale, 190, 2400);
-      r.card.h = clamp(r.origH + (e.clientY - r.startY) / scale, 96, 2400);
-      const node = this.cardEls.get(r.card.id);
-      if (node) {
-        node.style.width = r.card.w + 'px';
-        node.style.height = r.card.h + 'px';
-      }
-      this.updateArrowsFor(r.card.id);
+      r.rawW = clamp(r.origW + (e.clientX - r.startX) / scale, 190, 2400);
+      r.rawH = clamp(r.origH + (e.clientY - r.startY) / scale, 96, 2400);
+      this.applyCardResize(r, !!e.shiftKey);
       return;
     }
 
@@ -5710,6 +5972,8 @@ const Workspace = {
     if (this.cardResize) {
       const r = this.cardResize;
       this.cardResize = null;
+      if (e.shiftKey) this.showSnapPreviewFromSelection();
+      else this.hideSnapOverlay();
       this.scheduleSave();
       if (r.card.type === 'pdf') this.renderPdfCard(r.card, true);
       else if (r.card.type === 'image') this.renderImageCard(r.card);
@@ -5796,7 +6060,7 @@ const Workspace = {
       focus: true
     });
     this.makeArrow(card.id, note.id);
-    toast('Cartão ligado à p. ' + card.page + ' criado', 'file');
+    toast(wsTr('ws.pdf.noteLinkedToast', { page: card.page }, 'Cartão ligado à p. ' + card.page + ' criado'), 'file');
   },
 
   onDocPointerDown(e) {
@@ -5831,6 +6095,7 @@ const Workspace = {
     const editing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target.isContentEditable;
     if (e.key === 'Shift' && !e.repeat) {
       if (this.cardDrag) this.applyCardDragPositions(this.cardDrag, true);
+      else if (this.cardResize) this.applyCardResize(this.cardResize, true);
       else if (!editing) this.showSnapPreviewFromSelection();
     }
 
@@ -5996,7 +6261,7 @@ const Workspace = {
     }
 
     let children = null;
-    if (!multiCards && card.type === 'group' && typeof wsGroupChildIds === 'function') {
+    if (!multiCards && !e.altKey && card.type === 'group' && typeof wsGroupChildIds === 'function') {
       const ids = wsGroupChildIds(this.board.cards, card);
       children = ids
         .map(id => this.board.cards.find(c => c.id === id))
@@ -6128,20 +6393,24 @@ const Workspace = {
     const layer = this.els && this.els.snapLayer;
     if (!layer || !snapRes || !curBox) return;
     const isPreview = !!(opts && opts.preview);
+    const isResize = !!(opts && opts.resize);
     layer.classList.add('active');
     const prox = Math.max(0, Math.min(1, Number(snapRes.proximity) || 0));
     layer.style.setProperty('--snap-prox', prox.toFixed(3));
+
+    const boxW = (isResize && snapRes.targetW != null) ? snapRes.targetW : curBox.w;
+    const boxH = (isResize && snapRes.targetH != null) ? snapRes.targetH : curBox.h;
 
     const gridStep = typeof WS_SNAP_GRID !== 'undefined' ? WS_SNAP_GRID : 26;
     const gridEl = this.els.snapGrid;
     if (gridEl) {
       const pad = Math.round(140 + 80 * prox);
-      const gw = Math.ceil((curBox.w + pad * 2) / (gridStep * 2)) * (gridStep * 2);
-      const gh = Math.ceil((curBox.h + pad * 2) / (gridStep * 2)) * (gridStep * 2);
-      const refX = isPreview ? curBox.x : snapRes.targetX;
-      const refY = isPreview ? curBox.y : snapRes.targetY;
-      const cx = refX + curBox.w / 2;
-      const cy = refY + curBox.h / 2;
+      const gw = Math.ceil((boxW + pad * 2) / (gridStep * 2)) * (gridStep * 2);
+      const gh = Math.ceil((boxH + pad * 2) / (gridStep * 2)) * (gridStep * 2);
+      const refX = isPreview ? curBox.x : (snapRes.targetX != null ? snapRes.targetX : curBox.x);
+      const refY = isPreview ? curBox.y : (snapRes.targetY != null ? snapRes.targetY : curBox.y);
+      const cx = refX + boxW / 2;
+      const cy = refY + boxH / 2;
       const gx = Math.round(cx / gridStep) * gridStep - gw / 2;
       const gy = Math.round(cy / gridStep) * gridStep - gh / 2;
       gridEl.style.left = gx + 'px';
@@ -6154,11 +6423,11 @@ const Workspace = {
     const moldEl = this.els.snapMold;
     if (moldEl) {
       const isNear = !!snapRes.near && prox > 0.35;
-      const mx = isPreview ? curBox.x : snapRes.targetX;
-      const my = isPreview ? curBox.y : snapRes.targetY;
+      const mx = isPreview ? curBox.x : (snapRes.targetX != null ? snapRes.targetX : curBox.x);
+      const my = isPreview ? curBox.y : (snapRes.targetY != null ? snapRes.targetY : curBox.y);
       const scale = isPreview ? 1.004 : (isNear ? 1.004 : (1 + (1 - snapRes.moldStrength) * 0.015));
-      moldEl.style.width = curBox.w + 'px';
-      moldEl.style.height = curBox.h + 'px';
+      moldEl.style.width = boxW + 'px';
+      moldEl.style.height = boxH + 'px';
       moldEl.style.transform = 'translate(' + mx + 'px,' + my + 'px) scale(' + scale.toFixed(4) + ')';
       moldEl.style.opacity = (0.2 + 0.54 * prox + (isNear ? 0.22 : 0)).toFixed(3);
       moldEl.classList.toggle('near', isNear);
@@ -6229,8 +6498,39 @@ const Workspace = {
       startY: e.clientY,
       origW: card.w,
       origH: card.h,
+      rawW: card.w,
+      rawH: card.h,
       id: e.pointerId
     };
+    if (e.shiftKey) this.applyCardResize(this.cardResize, true);
+    else this.hideSnapOverlay();
+  },
+
+  applyCardResize(r, useSnap) {
+    if (!r || !r.card) return;
+    let nextW = clamp(r.rawW != null ? r.rawW : r.origW, 190, 2400);
+    let nextH = clamp(r.rawH != null ? r.rawH : r.origH, 96, 2400);
+    if (useSnap && typeof wsComputeResizeSnap === 'function') {
+      const others = (this.board.cards || []).filter(c => c && c.id !== r.card.id);
+      const snapRes = wsComputeResizeSnap(
+        { x: r.card.x, y: r.card.y, w: nextW, h: nextH },
+        others,
+        { minW: 190, minH: 96 }
+      );
+      nextW = clamp(snapRes.w, 190, 2400);
+      nextH = clamp(snapRes.h, 96, 2400);
+      this.renderSnapOverlay(snapRes, { x: r.card.x, y: r.card.y, w: nextW, h: nextH }, { resize: true });
+    } else {
+      this.hideSnapOverlay();
+    }
+    r.card.w = nextW;
+    r.card.h = nextH;
+    const node = this.cardEls.get(r.card.id);
+    if (node) {
+      node.style.width = nextW + 'px';
+      node.style.height = nextH + 'px';
+    }
+    this.updateArrowsFor(r.card.id);
   },
 
   /* -------- seleção de texto e movimento no PDF -------- */
@@ -6333,12 +6633,13 @@ const Workspace = {
     if (!text) { this.hideSelectionTools(); return; }
 
     this.selection = { card, range: range.cloneRange(), text };
-    let html = '<span>destacar</span>';
+    let html = '<span>' + wsEscape(wsTr('ws.pdf.selHighlight', null, 'destacar')) + '</span>';
     WS_HL_COLORS.forEach(c => {
-      html += '<button class="ws-sel-dot" data-hlcolor="' + c.value + '" title="Destacar em ' + c.label.toLowerCase() + '" style="background:' + c.value + '"></button>';
+      const lbl = wsColorLabel(c).toLowerCase();
+      html += '<button class="ws-sel-dot" data-hlcolor="' + c.value + '" title="' + wsEscape(wsTr('ws.pdf.selHighlight', null, 'destacar') + ' · ' + lbl) + '" style="background:' + c.value + '"></button>';
     });
     html += '<span style="opacity:.5">·</span>' +
-      '<button class="ws-tool wide" data-selcard title="Criar um cartão com este trecho">' + svgIcon('file') + '<span>cartão</span></button>';
+      '<button class="ws-tool wide" data-selcard title="' + wsEscape(wsTr('ws.pdf.selCardTip', null, 'Criar um cartão com este trecho')) + '">' + svgIcon('file') + '<span>' + wsEscape(wsTr('ws.pdf.selCard', null, 'cartão')) + '</span></button>';
     this.els.selTools.innerHTML = html;
 
     const rect = range.getBoundingClientRect();
@@ -6410,7 +6711,7 @@ const Workspace = {
     this.clearNativeSelection();
     this.hideSelectionTools();
     this.scheduleSave();
-    toast('Trecho destacado', 'highlight');
+    toast(wsTr('ws.pdf.hlToast', null, 'Trecho destacado'), 'highlight');
   },
 
   selectionToCard() {
@@ -6447,7 +6748,7 @@ const Workspace = {
       focus: false
     });
     this.select(note.id);
-    toast('Cartão ligado ao PDF criado', 'file');
+    toast(wsTr('ws.pdf.selCardToast', null, 'Cartão ligado ao PDF criado'), 'file');
   },
 
   ensureDragGhost(text) {
@@ -6481,11 +6782,11 @@ const Workspace = {
     timer.id = 'ws-timer';
     timer.innerHTML =
       '<div class="ws-timer-head">' +
-        '<span class="ws-timer-mode">Foco</span>' +
-        '<button class="ws-timer-btn" data-tact="settings" title="Configurações do cronômetro">' + svgIcon('sliders') + '</button>' +
-        '<button class="ws-timer-btn" data-tact="min" title="Minimizar em bolinha">' + svgIcon('chevD') + '</button>' +
+        '<span class="ws-timer-mode">' + wsEscape(wsTr('timer.preset.focus', null, 'Foco')) + '</span>' +
+        '<button class="ws-timer-btn" data-tact="settings" title="' + wsEscape(wsTr('ws.timer.settingsTip', null, 'Configurações do cronômetro')) + '">' + svgIcon('sliders') + '</button>' +
+        '<button class="ws-timer-btn" data-tact="min" title="' + wsEscape(wsTr('ws.timer.minTip', null, 'Minimizar em bolinha')) + '">' + svgIcon('chevD') + '</button>' +
       '</div>' +
-      '<div class="ws-timer-ball" title="Abrir cronômetro">25:00</div>' +
+      '<div class="ws-timer-ball" title="' + wsEscape(wsTr('ws.timer.openTip', null, 'Abrir cronômetro')) + '">25:00</div>' +
       '<div class="ws-timer-body">' +
         '<div class="ws-timer-ring">' +
           '<svg viewBox="0 0 100 100" aria-hidden="true">' +
@@ -6497,9 +6798,9 @@ const Workspace = {
       '</div>' +
       '<span class="ws-timer-measure" aria-hidden="true"></span>' +
       '<div class="ws-timer-controls">' +
-        '<button class="ws-timer-ctrl" data-tact="reset" title="Reiniciar">' + svgIcon('reset') + '</button>' +
-        '<button class="ws-timer-ctrl main" data-tact="toggle" title="Iniciar">' + svgIcon('play') + '</button>' +
-        '<button class="ws-timer-ctrl" data-tact="skip" title="Pular">' + svgIcon('skip') + '</button>' +
+        '<button class="ws-timer-ctrl" data-tact="reset" title="' + wsEscape(wsTr('timer.resetAria', null, 'Reiniciar')) + '">' + svgIcon('reset') + '</button>' +
+        '<button class="ws-timer-ctrl main" data-tact="toggle" title="' + wsEscape(wsTr('timer.start', null, 'Iniciar')) + '">' + svgIcon('play') + '</button>' +
+        '<button class="ws-timer-ctrl" data-tact="skip" title="' + wsEscape(wsTr('timer.skipAria', null, 'Pular')) + '">' + svgIcon('skip') + '</button>' +
       '</div>';
     root.append(timer);
 
@@ -6817,9 +7118,10 @@ const Workspace = {
     if (ball && ball.textContent !== text) ball.textContent = text;
 
     const preset = (typeof TIMER_PRESETS !== 'undefined' ? TIMER_PRESETS : []).find(p => p.id === t.preset);
-    const mode = countdown ? (preset ? preset.label : 'Foco') : 'Cronômetro';
+    const presetLbl = preset ? wsTr('timer.preset.' + preset.id, null, preset.label) : wsTr('timer.preset.focus', null, 'Foco');
+    const mode = countdown ? presetLbl : wsTr('timer.tab.stopwatch', null, 'Cronômetro');
     const modeEl = this.els.timer.querySelector('.ws-timer-mode');
-    if (modeEl) modeEl.textContent = mode + (t.running ? ' · ativo' : '');
+    if (modeEl) modeEl.textContent = mode + (t.running ? wsTr('ws.timer.activeSuffix', null, ' · ativo') : '');
 
     const fg = this.els.timer.querySelector('.ws-timer-ring-fg');
     if (fg) {
@@ -6830,10 +7132,11 @@ const Workspace = {
     const btn = this.els.timer.querySelector('[data-tact="toggle"]');
     if (btn) {
       const state = t.running ? 'pause' : 'play';
-      if (btn.dataset.state !== state) {
+      const tip = t.running ? wsTr('timer.pause', null, 'Pausar') : wsTr('timer.start', null, 'Iniciar');
+      if (btn.dataset.state !== state || btn.title !== tip) {
         btn.dataset.state = state;
         btn.innerHTML = svgIcon(state);
-        btn.title = t.running ? 'Pausar' : 'Iniciar';
+        btn.title = tip;
       }
     }
     const lenChanged = (this.lastTimerText || '').length !== text.length;
@@ -6913,50 +7216,100 @@ const Workspace = {
       ring:    '<span class="ws-sp ws-sp-ring"></span>',
       flip:    '<span class="ws-sp ws-sp-flip"><b>2</b><b>5</b></span>'
     };
-    let html = '<div class="ws-tset-head"><p class="ws-pop-title">Cronômetro flutuante</p>' +
-      '<span class="ws-tset-sub">Mesmo tempo da página Tempo. Tudo aqui é só visual.</span></div>';
+    const styleKeyMap = { minimal: 'ws.timer.styleMinimal', ring: 'ws.timer.styleRing', flip: 'ws.timer.styleFlip' };
+    let html = '<div class="ws-tset-head"><p class="ws-pop-title">' + wsEscape(wsTr('ws.timer.popTitle', null, 'Cronômetro flutuante')) + '</p>' +
+      '<span class="ws-tset-sub">' + wsEscape(wsTr('ws.timer.popSub', null, 'Mesmo tempo da página Tempo. Tudo aqui é só visual.')) + '</span></div>';
 
     /* 1 — forma do relógio */
-    html += '<section class="ws-tset-group"><h4>Estilo</h4>' +
-      '<p class="ws-tset-hint">Escolha o formato do relógio.</p><div class="ws-style-row">';
+    html += '<section class="ws-tset-group"><h4>' + wsEscape(wsTr('ws.timer.styleHead', null, 'Estilo')) + '</h4>' +
+      '<p class="ws-tset-hint">' + wsEscape(wsTr('ws.timer.styleHint', null, 'Escolha o formato do relógio.')) + '</p><div class="ws-style-row">';
     WS_TIMER_STYLES.forEach(s => {
+      const lbl = wsTr(styleKeyMap[s.id] || 'ws.timer.styleMinimal', null, s.label);
       html += '<button class="ws-style-btn' + (t.style === s.id ? ' active' : '') + '" data-style="' + s.id + '">' +
-        prev[s.id] + '<span>' + s.label + '</span></button>';
+        prev[s.id] + '<span>' + wsEscape(lbl) + '</span></button>';
     });
     html += '</div></section>';
 
     /* 2 — cor */
-    html += '<section class="ws-tset-group"><h4>Cor</h4>' +
-      '<p class="ws-tset-hint">Dígitos e halo usam a mesma cor.</p><div class="ws-color-grid">';
+    html += '<section class="ws-tset-group"><h4>' + wsEscape(wsTr('ws.timer.colorHead', null, 'Cor')) + '</h4>' +
+      '<p class="ws-tset-hint">' + wsEscape(wsTr('ws.timer.colorHint', null, 'Dígitos e halo usam a mesma cor.')) + '</p><div class="ws-color-grid">';
     WS_TIMER_COLORS.forEach(c => {
       const bg = c.value || 'var(--accent)';
-      html += '<button class="ws-swatch' + (t.color === c.value ? ' active' : '') + '" data-color="' + c.value + '" title="' + c.label + '" style="background:' + bg + '"></button>';
+      const lbl = wsColorLabel(c);
+      html += '<button class="ws-swatch' + (t.color === c.value ? ' active' : '') + '" data-color="' + c.value + '" title="' + wsEscape(lbl) + '" style="background:' + bg + '"></button>';
     });
     html += '</div><label class="ws-color-custom"><input type="color" value="' +
-      (wsColor(t.color, '#8fa2ff') || '#8fa2ff') + '" data-tcolor><span>Cor personalizada</span></label></section>';
+      (wsColor(t.color, '#8fa2ff') || '#8fa2ff') + '" data-tcolor><span>' + wsEscape(wsTr('ws.bgCustomColor', null, 'Cor personalizada')) + '</span></label></section>';
 
     /* 3 — fonte e tamanho */
-    html += '<section class="ws-tset-group"><h4>Fonte e tamanho</h4>' +
-      '<p class="ws-tset-hint">O halo e o card crescem junto com o tamanho.</p>' +
-      '<div class="ws-range-row"><span>Fonte</span><select class="ws-select" data-tfont>';
+    html += '<section class="ws-tset-group"><h4>' + wsEscape(wsTr('ws.timer.fontSizeHead', null, 'Fonte e tamanho')) + '</h4>' +
+      '<p class="ws-tset-hint">' + wsEscape(wsTr('ws.timer.fontSizeHint', null, 'O halo e o card crescem junto com o tamanho.')) + '</p>' +
+      '<div class="ws-range-row"><span>' + wsEscape(wsTr('ws.timer.fontLabel', null, 'Fonte')) + '</span><select class="ws-select" data-tfont>';
     (typeof FONTS !== 'undefined' ? FONTS : []).forEach(f => {
-      html += '<option value="' + f.id + '"' + (f.id === t.font ? ' selected' : '') + '>' + f.label + '</option>';
+      html += '<option value="' + f.id + '"' + (f.id === t.font ? ' selected' : '') + '>' + wsEscape(f.label) + '</option>';
     });
     html += '</select></div>' +
-      '<div class="ws-range-row"><span>Tamanho <b data-out>' + t.size + 'px</b></span>' +
+      '<div class="ws-range-row"><span>' + wsEscape(wsTr('ws.timer.sizeLabel', null, 'Tamanho')) + ' <b data-out>' + t.size + 'px</b></span>' +
       '<input type="range" min="20" max="72" step="1" value="' + t.size + '" data-range="size"></div></section>';
 
     /* 4 — janela */
-    html += '<section class="ws-tset-group"><h4>Janela</h4>' +
-      '<div class="ws-range-row"><span>Transparência <b data-out>' + t.opacity + '%</b></span>' +
+    html += '<section class="ws-tset-group"><h4>' + wsEscape(wsTr('ws.timer.winHead', null, 'Janela')) + '</h4>' +
+      '<div class="ws-range-row"><span>' + wsEscape(wsTr('ws.timer.opacityLabel', null, 'Transparência')) + ' <b data-out>' + t.opacity + '%</b></span>' +
       '<input type="range" min="20" max="100" step="1" value="' + t.opacity + '" data-range="opacity"></div>' +
       '<div class="ws-pop-row" style="margin-top:12px">' +
-      '<button class="ws-pop-chip" data-tact="resetpos">Posição padrão</button>' +
-      '<button class="ws-pop-chip" data-tact="hide">Ocultar</button></div>' +
-      '<p class="ws-pop-note">Arraste pelo topo para mover; o botão de seta minimiza em bolinha.</p></section>';
+      '<button class="ws-pop-chip" data-tact="resetpos">' + wsEscape(wsTr('ws.timer.resetPos', null, 'Posição padrão')) + '</button>' +
+      '<button class="ws-pop-chip" data-tact="hide">' + wsEscape(wsTr('ws.timer.hide', null, 'Ocultar')) + '</button></div>' +
+      '<p class="ws-pop-note">' + wsEscape(wsTr('ws.timer.winNote', null, 'Arraste pelo topo para mover; o botão de seta minimiza em bolinha.')) + '</p></section>';
 
     box.innerHTML = html;
     this.positionTimerSettings();
+  },
+
+  syncLanguage() {
+    if (!this.inited) return;
+    if (this.els.empty) this.buildEmpty();
+    if (this.els.topbar) this.buildTopbar();
+    if (this.els.zoom) {
+      this.buildZoom();
+      if (this.board && this.board.view) {
+        const lvl = this.els.zoom.querySelector('.ws-zoom-level');
+        if (lvl) lvl.textContent = Math.round(this.board.view.scale * 100) + '%';
+      }
+    }
+    this.updateHint();
+    if (this.board) {
+      this.renderAll();
+      this.refreshPdfs();
+      this.renderArrowTools();
+      this.renderMultiTools();
+      this.renderInkBar();
+      if (this.inkSettingsOpen) this.renderInkSettings();
+      if (this.els.timer) {
+        const tm = this.els.timer;
+        const headBtns = tm.querySelectorAll('.ws-timer-head [data-tact]');
+        headBtns.forEach(b => {
+          if (b.dataset.tact === 'settings') b.title = wsTr('ws.timer.settingsTip', null, 'Configurações do cronômetro');
+          else if (b.dataset.tact === 'min') b.title = wsTr('ws.timer.minTip', null, 'Minimizar em bolinha');
+        });
+        const ball = tm.querySelector('.ws-timer-ball');
+        if (ball) ball.title = wsTr('ws.timer.openTip', null, 'Abrir cronômetro');
+        const ctrlBtns = tm.querySelectorAll('.ws-timer-controls [data-tact]');
+        ctrlBtns.forEach(b => {
+          if (b.dataset.tact === 'reset') b.title = wsTr('timer.resetAria', null, 'Reiniciar');
+          else if (b.dataset.tact === 'skip') b.title = wsTr('timer.skipAria', null, 'Pular');
+        });
+        this.updateTimerFace();
+        if (this.els.timerSettings && !this.els.timerSettings.hidden) this.renderTimerSettings();
+      }
+      if (this.popover === 'boards') this.refreshBoardsPopover();
+      else if (this.popover === 'bg') this.refreshBgPopover();
+      else if (this.popover === 'add') { this.popover = null; this.openAddPopover(); }
+      else if (this.popover === 'search') { this.popover = null; this.openSearchPopover(); }
+      else if (this.popover === 'connections' && this.connCardId) {
+        const c = this.board.cards.find(x => x.id === this.connCardId);
+        if (c) { this.popover = null; this.openConnectionsPopover(c); }
+      }
+    }
   },
 
 };

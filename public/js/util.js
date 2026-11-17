@@ -12,6 +12,15 @@ function el(tag, cls, html) {
   return n;
 }
 
+function tr(key, fallback, vars) {
+  if (typeof t === 'function') return t(key, vars, fallback);
+  let out = fallback != null ? String(fallback) : String(key || '');
+  if (vars) {
+    out = out.replace(/\{(\w+)\}/g, (_, k) => (vars[k] != null ? String(vars[k]) : ''));
+  }
+  return out;
+}
+
 function todayKey(d) {
   d = d || new Date();
   const y = d.getFullYear();

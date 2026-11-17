@@ -154,6 +154,19 @@ const TimerPage = {
     up: 'toggle', right: 'reset', down: 'preset', left: 'mode'
   },
 
+  presetLabel(id) {
+    const def = TIMER_PRESETS.find(p => p.id === id);
+    return tr('timer.preset.' + id, def ? def.label : id);
+  },
+
+  refreshHaloLabels() {
+    this.HALO_ACTIONS.forEach(a => {
+      const lbl = $('#timer-halo .halo-act[data-action="' + a.id + '"] .halo-label');
+      if (lbl) lbl.textContent = tr('timer.halo.' + a.id, a.label);
+    });
+    this.updateHalo();
+  },
+
   initHalo() {
     const halo = $('#timer-halo');
     const stage = $('#page-timer .timer-stage');
@@ -166,7 +179,7 @@ const TimerPage = {
       node.dataset.dir = a.dir;
       node.innerHTML =
         '<span class="halo-icon">' + svgIcon(a.icon) + '</span>' +
-        '<span class="halo-label">' + a.label + '</span>';
+        '<span class="halo-label">' + tr('timer.halo.' + a.id, a.label) + '</span>';
       halo.append(node);
     });
 
@@ -241,7 +254,7 @@ const TimerPage = {
     const running = Store.state.timer.running;
     node.innerHTML =
       '<span class="halo-icon">' + svgIcon(running ? 'pause' : 'play') + '</span>' +
-      '<span class="halo-label">' + (running ? 'Pausar' : 'Iniciar') + '</span>';
+      '<span class="halo-label">' + (running ? tr('timer.pause', 'Pausar') : tr('timer.start', 'Iniciar')) + '</span>';
   },
 
   haloAction(action) {
@@ -363,7 +376,8 @@ const TimerPage = {
       tr.focusByDay[day] = (tr.focusByDay[day] || 0) + 1;
       if (t.sound) Sound.chime();
       this.flashTitle();
-      toast('Tempo de ' + (TIMER_PRESETS.find(p => p.id === wasPreset).label).toLowerCase() + ' concluído!', 'target');
+      const wasLbl = this.presetLabel(wasPreset).toLowerCase();
+      toast(tr('timer.finishedToast', 'Tempo de ' + wasLbl + ' concluído!', { label: wasLbl }), 'target');
 
       if (t.autoCycle && t.tab === 'countdown') {
         if (wasPreset === 'focus') {
@@ -372,8 +386,8 @@ const TimerPage = {
         } else {
           t.preset = 'focus';
         }
-        toast('Próximo: ' + TIMER_PRESETS.find(p => p.id === t.preset).label +
-          ' · ' + t.durations[t.preset] + 'min', 'timer');
+        const nextLbl = this.presetLabel(t.preset);
+        toast(tr('timer.nextToast', 'Próximo: ' + nextLbl + ' · ' + t.durations[t.preset] + 'min', { label: nextLbl, m: t.durations[t.preset] }), 'timer');
       } else {
         t.remaining = 0;
       }
@@ -387,11 +401,11 @@ const TimerPage = {
     clearInterval(this.titleIv);
     let n = 0;
     this.titleIv = setInterval(() => {
-      document.title = (n % 2 ? '⏰ ' : '') + 'Tempo concluído!';
+      document.title = (n % 2 ? '⏰ ' : '') + tr('timer.finishedTitle', 'Tempo concluído!');
       if (++n > 7) {
         clearInterval(this.titleIv);
         this.titleIv = null;
-        document.title = Router.route === 'home' ? 'Fluxo' : Router.labels[Router.route] + ' · Fluxo';
+        document.title = tr('title.' + Router.route, Router.route === 'home' ? 'Fluxo' : Router.routeLabel(Router.route) + ' · Fluxo');
       }
     }, 700);
   },
@@ -450,7 +464,7 @@ const TimerPage = {
     $$('#timer-presets .preset-btn').forEach(b => {
       b.classList.toggle('active', b.dataset.preset === t.preset);
       const p = TIMER_PRESETS.find(x => x.id === b.dataset.preset);
-      b.textContent = p.label + ' · ' + t.durations[p.id] + 'min';
+      b.textContent = this.presetLabel(p.id) + ' · ' + t.durations[p.id] + 'min';
     });
 
     // tempo exibido
@@ -460,13 +474,13 @@ const TimerPage = {
       const total = this.presetTotal();
       text = fmtClock(rem);
       progress = clamp(rem / total, 0, 1);
-      $('#timer-label').textContent = (TIMER_PRESETS.find(p => p.id === t.preset).label) +
-        (t.running ? '' : (rem <= 0 && t.remaining === 0 ? ' · concluído' : ''));
+      $('#timer-label').textContent = this.presetLabel(t.preset) +
+        (t.running ? '' : (rem <= 0 && t.remaining === 0 ? tr('timer.doneSuffix', ' · concluído') : ''));
     } else {
       const elap = this.elapsedNow();
       text = fmtClock(elap);
       progress = ((elap % 3600) / 3600);
-      $('#timer-label').textContent = 'tempo decorrido';
+      $('#timer-label').textContent = tr('timer.elapsed', 'tempo decorrido');
     }
     this.renderTime(text);
 
@@ -475,17 +489,24 @@ const TimerPage = {
 
     const btn = $('#timer-toggle');
     btn.innerHTML = (t.running ? svgIcon('pause') : svgIcon('play')) +
-      '<span>' + (t.running ? 'Pausar' : 'Iniciar') + '</span>';
+      '<span>' + (t.running ? tr('timer.pause', 'Pausar') : tr('timer.start', 'Iniciar')) + '</span>';
 
     // sessões de foco de hoje
     const today = todayKey();
     const focusToday = Store.state.tracker.focusByDay[today] || 0;
     const sessions = $('#timer-sessions');
     if (sessions) {
-      sessions.textContent = focusToday === 0
-        ? 'nenhum foco hoje — comece quando quiser'
-        : focusToday + (focusToday === 1 ? ' foco hoje' : ' focos hoje') +
-          (t.autoCycle ? ' · pausa longa a cada ' + t.cycle + ' focos' : '');
+      if (focusToday === 0) {
+        sessions.textContent = tr('timer.sessionsNone', 'nenhum foco hoje — comece quando quiser');
+      } else {
+        const countTxt = focusToday === 1
+          ? tr('timer.sessionsOne', '1 foco hoje')
+          : tr('timer.sessionsMany', focusToday + ' focos hoje', { n: focusToday });
+        const cycleTxt = t.autoCycle
+          ? tr('timer.sessionsCycle', ' · pausa longa a cada ' + t.cycle + ' focos', { n: t.cycle })
+          : '';
+        sessions.textContent = countTxt + cycleTxt;
+      }
     }
 
     this.updateHalo();

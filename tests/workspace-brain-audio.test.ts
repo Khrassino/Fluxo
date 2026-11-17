@@ -84,10 +84,12 @@ function loadBrainAndAudioContext() {
   const files = [
     'public/js/util.js',
     'public/js/storage.js',
+    'public/js/i18n.js',
     'public/js/audio.js',
     'public/js/ink.js',
     'public/js/ws-store.js',
     'public/js/ws-brain.js',
+    'public/js/ws-math.js',
     'public/js/workspace.js',
   ];
 
@@ -119,7 +121,8 @@ test('Audio volume curve stays soft and bounded while supporting all cozy tracks
   assert.equal(out.labels.lofi, undefined);
   assert.equal(out.labels.fireplace, 'Lareira');
   assert.equal(out.labels.night, 'Noite calma');
-  assert.equal(out.labels.typing, 'Teclado');
+  assert.equal(out.labels.typing, 'Toques');
+  assert.equal(out.labels.keys, 'Teclas');
   assert.equal(out.labels.writing, 'Escrita');
 
   assert.equal(out.g0, 0);
@@ -377,5 +380,123 @@ test('ws-brain computes marquee box intersections, stroke bounds, and batch stro
   assert.deepEqual(out.movedStart, { x: 145, y: 245 });
   assert.equal(out.intersects, true);
   assert.equal(out.disjoint, false);
+});
+
+test('ws-math detects delimiters, renders fractions/subscripts/Greek, preserves rich HTML formatting, and wraps selections', () => {
+  const ctx = loadBrainAndAudioContext();
+  const out = JSON.parse(vm.runInContext(`(() => {
+    const hasInline = wsHasMathDelimiters('Energia $E = mc^2$ e momento');
+    const hasDisplay = wsHasMathDelimiters('$$\\\\int_0^1 x^2 dx$$');
+    const noPrice = wsHasMathDelimiters('Custa $10 ou $20');
+    const rendered = wsRenderTextWithMath('Fração: $\\\\frac{\\\\alpha + x_i}{2}$');
+    const noteHtml = wsRenderNoteDisplayHtml('<div><b>Lei:</b> $a^2 + b^2 = c^2$</div>');
+    const wrappedEmpty = wsWrapMathSelection('Texto ', 6, 6, false);
+    const wrappedSel = wsWrapMathSelection('Calcule x^2 agora', 8, 11, true);
+    return JSON.stringify({ hasInline, hasDisplay, noPrice, rendered, noteHtml, wrappedEmpty, wrappedSel });
+  })()`, ctx));
+
+  assert.equal(out.hasInline, true);
+  assert.equal(out.hasDisplay, true);
+  assert.equal(out.noPrice, false);
+  assert.ok(out.rendered.includes('ws-math-inline'));
+  assert.ok(out.rendered.includes('ws-m-frac'));
+  assert.ok(out.rendered.includes('α'));
+  assert.ok(out.noteHtml.startsWith('<div><b>Lei:</b>'));
+  assert.ok(out.noteHtml.includes('ws-m-sup'));
+  assert.equal(out.wrappedEmpty.text, 'Texto $\\frac{a}{b}$');
+  assert.equal(out.wrappedSel.text, 'Calcule $$x^2$$ agora');
+});
+
+test('ws-brain computes organic multi-lane arrow curves, custom end caps, bg patterns, and Shift resize snapping', () => {
+  const ctx = loadBrainAndAudioContext();
+  const out = JSON.parse(vm.runInContext(`(() => {
+    const g0 = wsArrowCurveGeometry({ x: 0, y: 0 }, { x: 240, y: 40 }, { x: 0, y: 0 }, { x: 240, y: 40 }, 0);
+    const gLanePos = wsArrowCurveGeometry({ x: 0, y: 0 }, { x: 240, y: 40 }, { x: 0, y: 0 }, { x: 240, y: 40 }, 18);
+    const gLaneNeg = wsArrowCurveGeometry({ x: 0, y: 0 }, { x: 240, y: 40 }, { x: 0, y: 0 }, { x: 240, y: 40 }, -18);
+
+    const capsAutoForward = wsResolveArrowCaps({ dir: 'forward', kind: 'relates', startCap: 'auto', endCap: 'auto' });
+    const capsAutoSupports = wsResolveArrowCaps({ dir: 'forward', kind: 'supports', startCap: 'auto', endCap: 'auto' });
+    const capsAutoContrast = wsResolveArrowCaps({ dir: 'forward', kind: 'contrast', startCap: 'auto', endCap: 'auto' });
+    const capsCustom = wsResolveArrowCaps({ dir: 'both', kind: 'contrast', startCap: 'circle-open', endCap: 'diamond' });
+
+    const normBoard = Workspace.normalize({
+      bg: { pattern: 'lines', color: '#121826' },
+      cards: [
+        { id: 'c1', type: 'note', x: 0, y: 0, w: 200, h: 120 },
+        { id: 'c2', type: 'note', x: 260, y: 0, w: 260, h: 180 }
+      ],
+      arrows: [
+        { id: 'a1', from: 'c1', to: 'c2', kind: 'relates', dir: 'forward', startCap: 'circle', endCap: 'square-open' }
+      ]
+    });
+
+    const gridSnap = wsComputeResizeSnap({ x: 0, y: 0, w: 211, h: 129 }, [], { minW: 190, minH: 96 });
+    const edgeSnap = wsComputeResizeSnap(
+      { x: 0, y: 0, w: 257, h: 177 },
+      [{ id: 'c2', x: 0, y: 240, w: 260, h: 180 }],
+      { minW: 190, minH: 96 }
+    );
+
+    return JSON.stringify({
+      g0,
+      gLanePos,
+      gLaneNeg,
+      capsAutoForward,
+      capsAutoSupports,
+      capsAutoContrast,
+      capsCustom,
+      normBgPattern: normBoard.bg.pattern,
+      normArrow: normBoard.arrows[0],
+      badBgPattern: wsNormalizeBgPattern('unknown'),
+      gridSnap,
+      edgeSnap
+    });
+  })()`, ctx));
+
+  assert.ok(out.g0.d.startsWith('M'));
+  assert.ok(out.g0.d.includes(' C'));
+  assert.notEqual(out.gLanePos.d, out.gLaneNeg.d);
+  assert.deepEqual(out.capsAutoForward, { startCap: 'circle-open', endCap: 'arrow' });
+  assert.deepEqual(out.capsAutoSupports, { startCap: 'circle', endCap: 'arrow' });
+  assert.deepEqual(out.capsAutoContrast, { startCap: 'bar', endCap: 'bar' });
+  assert.deepEqual(out.capsCustom, { startCap: 'circle-open', endCap: 'diamond' });
+  assert.equal(out.normBgPattern, 'lines');
+  assert.equal(out.badBgPattern, 'dots');
+  assert.equal(out.normArrow.startCap, 'circle');
+  assert.equal(out.normArrow.endCap, 'square-open');
+
+  assert.equal(out.gridSnap.w, 208);
+  assert.equal(out.gridSnap.h, 130);
+  assert.equal(out.edgeSnap.snappedX, true);
+  assert.equal(out.edgeSnap.w, 260);
+});
+
+test('i18n supports switching to English across workspace, arrow caps, bg patterns, and audio tracks', () => {
+  const ctx = loadBrainAndAudioContext();
+  const out = JSON.parse(vm.runInContext(`(() => {
+    Store.load();
+    I18n.setLang('en');
+    return JSON.stringify({
+      lang: getLang(),
+      brand: wsTr('ws.brand'),
+      bgLines: wsTr('ws.bg.lines'),
+      capCircle: wsTr('ws.arrow.capCircle'),
+      mathTitle: wsTr('ws.mathInsertTitle'),
+      groupHint: wsTr('ws.groupHint'),
+      typingLabel: getTrackLabel('typing'),
+      keysLabel: getTrackLabel('keys'),
+      writingLabel: getTrackLabel('writing')
+    });
+  })()`, ctx));
+
+  assert.equal(out.lang, 'en');
+  assert.equal(out.brand, 'Workspace');
+  assert.equal(out.bgLines, 'Lines');
+  assert.equal(out.capCircle, 'Circle');
+  assert.ok(out.mathTitle.includes('LaTeX'));
+  assert.ok(out.groupHint.includes('Alt'));
+  assert.equal(out.typingLabel, 'Taps');
+  assert.equal(out.keysLabel, 'Keys');
+  assert.equal(out.writingLabel, 'Writing');
 });
 

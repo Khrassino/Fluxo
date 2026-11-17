@@ -72,7 +72,7 @@ const LayoutEdit = {
     this.buildBar();
     this.decorate();
     if (typeof Idle !== 'undefined') Idle.wake();
-    toast('Arraste os elementos · solte na lixeira para remover', 'grip');
+    toast(tr('le.toastStart', 'Arraste os elementos · solte na lixeira para remover'), 'grip');
   },
 
   stop() {
@@ -123,12 +123,12 @@ const LayoutEdit = {
     bar.id = 'layout-bar';
     bar.innerHTML =
       '<div class="le-tray empty" id="le-tray">' +
-        '<span class="le-tray-label">Elementos ocultos</span>' +
+        '<span class="le-tray-label">' + tr('le.trayEmpty', 'Elementos ocultos') + '</span>' +
         '<div class="le-tray-items" id="le-tray-items"></div>' +
       '</div>' +
       '<div class="le-bar-actions">' +
-        '<div class="le-remove" id="le-remove">' + svgIcon('trash') + '<span>Solte aqui para remover</span></div>' +
-        '<button class="le-done" id="le-done">' + svgIcon('check') + '<span>Concluir</span></button>' +
+        '<div class="le-remove" id="le-remove">' + svgIcon('trash') + '<span>' + tr('le.removeZone', 'Solte aqui para remover') + '</span></div>' +
+        '<button class="le-done" id="le-done">' + svgIcon('check') + '<span>' + tr('le.done', 'Concluir') + '</span></button>' +
       '</div>';
     document.body.append(bar);
 
@@ -166,7 +166,7 @@ const LayoutEdit = {
           const rm = el('span', 'home-chip-remove', '×');
           rm.setAttribute('role', 'button');
           rm.setAttribute('tabindex', '0');
-          rm.title = 'Remover este atalho';
+          rm.title = tr('le.removeChip', 'Remover este atalho');
           rm.addEventListener('pointerdown', (e) => e.stopPropagation());
           const removeChip = (e) => {
             e.stopPropagation();
@@ -179,7 +179,7 @@ const LayoutEdit = {
               Store.save();
               HomePage.renderChips();
               this.decorate();
-              toast('Atalho removido · recupere na barra inferior', 'eyeoff');
+              toast(tr('le.chipRemoved', 'Atalho removido · recupere na barra inferior'), 'eyeoff');
             }
           };
           rm.addEventListener('click', removeChip);
@@ -195,8 +195,8 @@ const LayoutEdit = {
     if (ctx.page === 'tracker') {
       const goalCard = $('#goal-card');
       if (goalCard && !goalCard.querySelector('.goal-var-btn')) {
-        const varBtn = el('button', 'chip goal-var-btn', svgIcon('sliders') + '<span>Variação</span>');
-        varBtn.title = 'Alternar visual da meta diária (barra, circular ou marcos)';
+        const varBtn = el('button', 'chip goal-var-btn', svgIcon('sliders') + '<span>' + tr('le.variation', 'Variação') + '</span>');
+        varBtn.title = tr('le.variationTitle', 'Alternar visual da meta diária (barra, circular ou marcos)');
         varBtn.addEventListener('click', (e) => {
           e.stopPropagation();
           const cur = Store.state.tracker.goalStyle || 'bar';
@@ -206,7 +206,8 @@ const LayoutEdit = {
           Store.save();
           TrackerPage.renderGoal();
           if (this.active) this.decorate();
-          toast('Estilo da meta: ' + (next === 'bar' ? 'Barra' : next === 'ring' ? 'Circular' : 'Marcos'), 'sparkle');
+          const styleLabel = tr('le.goalStyle.' + next, next === 'bar' ? 'Barra' : next === 'ring' ? 'Circular' : 'Marcos');
+          toast(tr('le.goalStyleToast', 'Estilo da meta: ' + styleLabel, { style: styleLabel }), 'sparkle');
         });
         goalCard.append(varBtn);
       }
@@ -246,15 +247,17 @@ const LayoutEdit = {
     const label = $('.le-tray-label', tray);
     if (label) {
       label.textContent = totalHidden
-        ? 'Toque para adicionar de volta'
-        : 'Nenhum elemento oculto';
+        ? tr('le.trayPick', 'Toque para adicionar de volta')
+        : tr('le.trayEmpty', 'Nenhum elemento oculto');
     }
 
     // Blocos estruturais ocultos
     hidden.forEach(item => {
       const def = ctx.defs.find(d => d.id === item.id) || { label: item.id };
-      const chip = el('button', 'le-chip', svgIcon('plus') + '<span>' + def.label + '</span>');
-      chip.title = 'Adicionar ' + def.label;
+      const prefix = ctx.page === 'tracker' ? 'tracker.layout.' : 'home.layout.';
+      const lbl = tr(prefix + item.id, def.label);
+      const chip = el('button', 'le-chip', svgIcon('plus') + '<span>' + lbl + '</span>');
+      chip.title = lbl;
       chip.addEventListener('click', () => this.toggleItem(item.id, true));
       box.append(chip);
     });
@@ -262,8 +265,9 @@ const LayoutEdit = {
     // Atalhos ocultos (página inicial)
     hiddenChips.forEach(c => {
       const def = HOME_CHIP_DEFS.find(d => d.id === c.id) || { label: c.id };
-      const chip = el('button', 'le-chip', svgIcon('plus') + '<span>Atalho: ' + def.label + '</span>');
-      chip.title = 'Adicionar atalho ' + def.label;
+      const lbl = tr('home.chipDef.' + c.id, def.label);
+      const chip = el('button', 'le-chip', svgIcon('plus') + '<span>' + tr('le.chipPrefix', 'Atalho: ' + lbl, { label: lbl }) + '</span>');
+      chip.title = lbl;
       chip.addEventListener('click', () => {
         const chips = HomePage.chipsLayout();
         const target = chips.find(x => x.id === c.id);
@@ -273,7 +277,7 @@ const LayoutEdit = {
           Store.save();
           HomePage.renderChips();
           this.decorate();
-          toast('Atalho ' + def.label + ' adicionado', 'check');
+          toast(tr('le.chipAdded', 'Atalho ' + lbl + ' adicionado', { label: lbl }), 'check');
         }
       });
       box.append(chip);
@@ -282,8 +286,9 @@ const LayoutEdit = {
     // Cartões de estatística ocultos (página de progresso)
     hiddenWidgets.forEach(w => {
       const def = TRACKER_WIDGET_DEFS.find(d => d.id === w.id) || { label: w.id };
-      const chip = el('button', 'le-chip', svgIcon('plus') + '<span>Cartão: ' + def.label + '</span>');
-      chip.title = 'Adicionar cartão ' + def.label;
+      const lbl = tr('tracker.widget.' + w.id, def.label);
+      const chip = el('button', 'le-chip', svgIcon('plus') + '<span>' + tr('le.cardPrefix', 'Cartão: ' + lbl, { label: lbl }) + '</span>');
+      chip.title = lbl;
       chip.addEventListener('click', () => {
         const widgets = TrackerPage.widgets();
         const target = widgets.find(x => x.id === w.id);
@@ -293,7 +298,7 @@ const LayoutEdit = {
           Store.save();
           TrackerPage.render();
           this.decorate();
-          toast('Cartão ' + def.label + ' adicionado', 'check');
+          toast(tr('le.cardAdded', 'Cartão ' + lbl + ' adicionado', { label: lbl }), 'check');
         }
       });
       box.append(chip);
@@ -438,7 +443,7 @@ const LayoutEdit = {
         return;
       }
       this.toggleItem(d.id, false);
-      toast('Elemento removido · recupere na barra inferior', 'eyeoff');
+      toast(tr('le.itemRemoved', 'Elemento removido · recupere na barra inferior'), 'eyeoff');
       return;
     }
 
@@ -517,7 +522,7 @@ const LayoutEdit = {
     Store.save();
     TrackerPage.render();
     this.decorate();
-    toast('Cartão removido · recupere na barra inferior', 'eyeoff');
+    toast(tr('le.cardRemoved', 'Cartão removido · recupere na barra inferior'), 'eyeoff');
   },
 
   saveStatOrder() {

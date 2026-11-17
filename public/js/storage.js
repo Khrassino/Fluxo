@@ -8,6 +8,7 @@ const Store = {
   defaults() {
     return {
       v: 1,
+      lang: 'pt',
       route: 'home',
       appearance: {
         theme: 'aurora',
@@ -29,7 +30,7 @@ const Store = {
         timeout: 60                  // segundos sem atividade | 0 = desligado
       },
       music: {
-        track: 'none',               // none | flowers | march | rain | ocean | pad | fireplace | night | typing | writing | custom
+        track: 'none',               // none | flowers | march | rain | ocean | pad | fireplace | night | typing | keys | writing | custom
         volume: 0.35,
         dynamicTheme: true,          // aplica paleta da capa enquanto toca
         visualEffects: true,         // animações visuais da música
@@ -247,6 +248,7 @@ const Store = {
       if (!this.state.effects || !['full', 'reduced', 'off'].includes(this.state.effects.level)) {
         this.state.effects = { level: 'full' };
       }
+      this.state.lang = this.state.lang === 'en' ? 'en' : 'pt';
       if (!Number.isFinite(+this.state.tracker.heatCell)) this.state.tracker.heatCell = 18;
       this.state.tracker.heatCell = clamp(+this.state.tracker.heatCell, 10, 34);
       // ids antigos dos gráficos continuam válidos
@@ -263,7 +265,10 @@ const Store = {
 
   save() {
     try { localStorage.setItem(STORE_KEY, JSON.stringify(this.state)); }
-    catch (e) { toast('Não foi possível salvar as configurações', 'close'); }
+    catch (e) {
+      const msg = typeof tr === 'function' ? tr('storage.saveErr', 'Não foi possível salvar as configurações') : 'Não foi possível salvar as configurações';
+      toast(msg, 'close');
+    }
   }
 };
 

@@ -226,12 +226,12 @@ const TasksPage = {
     });
 
     if (!val) {
-      dueLabel.textContent = 'Prazo';
+      dueLabel.textContent = tr('tasks.dueLabel', 'Prazo');
       dueLabel.parentElement.classList.remove('has-date');
     } else {
       dueLabel.parentElement.classList.add('has-date');
-      if (val === todayStr) dueLabel.textContent = 'Hoje';
-      else if (val === tomorrowStr) dueLabel.textContent = 'Amanhã';
+      if (val === todayStr) dueLabel.textContent = tr('tasks.dueToday', 'Hoje');
+      else if (val === tomorrowStr) dueLabel.textContent = tr('tasks.dueTomorrow', 'Amanhã');
       else dueLabel.textContent = formatShortDatePt(val, todayStr);
     }
   },
@@ -313,7 +313,7 @@ const TasksPage = {
       if (save && val && val !== item.text) {
         item.text = val;
         Store.save();
-        toast('Tarefa atualizada', 'pencil');
+        toast(tr('tasks.updated', 'Tarefa atualizada'), 'pencil');
       }
       this.render();
       if (typeof HomePage !== 'undefined') HomePage.renderChips();
@@ -359,7 +359,7 @@ const TasksPage = {
     Store.save();
     this.render();
     if (typeof HomePage !== 'undefined') HomePage.renderChips();
-    toast('Tarefa restaurada', 'reset');
+    toast(tr('tasks.restored', 'Tarefa restaurada'), 'reset');
   },
 
   remove(id) {
@@ -372,7 +372,7 @@ const TasksPage = {
       this.expandedIds.delete(id);
       Store.save();
       this.render();
-      this.showUndoBanner('Tarefa removida', { item, index: idx });
+      this.showUndoBanner(tr('tasks.removed', 'Tarefa removida'), { item, index: idx });
       if (typeof HomePage !== 'undefined') HomePage.renderChips();
     };
     if (li) { li.classList.add('exit'); setTimeout(finish, 220); }
@@ -386,12 +386,14 @@ const TasksPage = {
       if (t.done) batch.push({ item: t, index: idx });
       else kept.push(t);
     });
-    if (!batch.length) { toast('Nenhuma tarefa concluída', 'checkc'); return; }
+    if (!batch.length) { toast(tr('tasks.noneDone', 'Nenhuma tarefa concluída'), 'checkc'); return; }
     Store.state.tasks.items = kept;
     Store.save();
     this.render();
     this.showUndoBanner(
-      batch.length + (batch.length === 1 ? ' concluída removida' : ' concluídas removidas'),
+      batch.length === 1
+        ? tr('tasks.clearedOne', '1 concluída removida')
+        : tr('tasks.clearedMany', batch.length + ' concluídas removidas', { n: batch.length }),
       { batch }
     );
     if (typeof HomePage !== 'undefined') HomePage.renderChips();
@@ -405,14 +407,17 @@ const TasksPage = {
 
   focusTask(item) {
     if (!item || typeof TimerPage === 'undefined') return;
-    toast('Foco iniciado: ' + item.text, 'play');
+    toast(tr('tasks.focusStart', 'Foco iniciado: ' + item.text, { text: item.text }), 'play');
     TimerPage.quickFocus();
   },
 
   syncTagDatalist(existingTags) {
     const dl = $('#tasks-tag-list');
     if (dl) {
-      const set = new Set([...TASK_DEFAULT_TAGS, ...existingTags]);
+      const defaults = (typeof getLang === 'function' && getLang() === 'en')
+        ? ['Study', 'Work', 'Personal', 'Review']
+        : TASK_DEFAULT_TAGS;
+      const set = new Set([...defaults, ...existingTags]);
       dl.innerHTML = '';
       set.forEach(t => {
         const opt = document.createElement('option');
@@ -424,7 +429,7 @@ const TasksPage = {
     const sel = $('#tasks-tag-filter');
     if (sel) {
       const prev = this.tagFilter || 'all';
-      sel.innerHTML = '<option value="all">Todas categorias</option>';
+      sel.innerHTML = '<option value="all">' + tr('tasks.allTags', 'Todas categorias') + '</option>';
       existingTags.forEach(t => {
         const opt = document.createElement('option');
         opt.value = t;
@@ -450,7 +455,7 @@ const TasksPage = {
           parts.push({
             cls: 'task-meta-item prio-' + item.priority,
             icon: 'flag',
-            text: pDef.short
+            text: tr('tasks.prio.' + pDef.id, pDef.short)
           });
         }
       }
@@ -472,14 +477,14 @@ const TasksPage = {
         parts.push({
           cls: 'task-meta-item sub-item',
           icon: 'sublist',
-          text: subDone + '/' + subs.length + ' subtarefas'
+          text: tr('tasks.subtasksCount', subDone + '/' + subs.length + ' subtarefas', { done: subDone, total: subs.length })
         });
       }
       if (item.notes && item.notes.trim()) {
         parts.push({
           cls: 'task-meta-item note-item',
           icon: null,
-          text: 'Com anotações'
+          text: tr('tasks.withNotes', 'Com anotações')
         });
       }
     }
@@ -491,7 +496,7 @@ const TasksPage = {
         parts.push({
           cls: 'task-meta-item created-item',
           icon: null,
-          text: 'Criada em ' + formatted
+          text: tr('tasks.createdOn', 'Criada em ' + formatted, { date: formatted })
         });
       }
     }
@@ -522,18 +527,18 @@ const TasksPage = {
 
     // Prazo
     const dueField = el('div', 'task-detail-field');
-    dueField.append(el('span', 'task-detail-label', 'Prazo'));
+    dueField.append(el('span', 'task-detail-label', tr('tasks.dueLabel', 'Prazo')));
     const dueControls = el('div', 'task-detail-due');
     const dInp = el('input', 'task-detail-input');
     dInp.type = 'date';
     dInp.value = item.dueDate || '';
-    dInp.setAttribute('aria-label', 'Alterar prazo da tarefa');
+    dInp.setAttribute('aria-label', tr('tasks.dueAria', 'Alterar prazo da tarefa'));
     dInp.addEventListener('change', () => {
       item.dueDate = normalizeDueDate(dInp.value);
       Store.save();
       this.render();
     });
-    const dToday = el('button', 'task-mini-btn' + (item.dueDate === todayStr ? ' active' : ''), 'Hoje');
+    const dToday = el('button', 'task-mini-btn' + (item.dueDate === todayStr ? ' active' : ''), tr('tasks.dueToday', 'Hoje'));
     dToday.type = 'button';
     dToday.addEventListener('click', () => {
       item.dueDate = todayStr;
@@ -541,14 +546,14 @@ const TasksPage = {
       this.render();
     });
     const tomorrowStr = taskAddDaysKey(todayStr, 1);
-    const dTom = el('button', 'task-mini-btn' + (item.dueDate === tomorrowStr ? ' active' : ''), 'Amanhã');
+    const dTom = el('button', 'task-mini-btn' + (item.dueDate === tomorrowStr ? ' active' : ''), tr('tasks.dueTomorrow', 'Amanhã'));
     dTom.type = 'button';
     dTom.addEventListener('click', () => {
       item.dueDate = tomorrowStr;
       Store.save();
       this.render();
     });
-    const dClear = el('button', 'task-mini-btn', 'Limpar');
+    const dClear = el('button', 'task-mini-btn', tr('tasks.clear', 'Limpar'));
     dClear.type = 'button';
     dClear.disabled = !item.dueDate;
     dClear.addEventListener('click', () => {
@@ -561,10 +566,11 @@ const TasksPage = {
 
     // Prioridade
     const prioField = el('div', 'task-detail-field');
-    prioField.append(el('span', 'task-detail-label', 'Prioridade'));
+    prioField.append(el('span', 'task-detail-label', tr('tasks.priority', 'Prioridade')));
     const prioGroup = el('div', 'task-detail-seg');
     TASK_PRIORITIES.forEach(p => {
-      const b = el('button', 'task-mini-btn' + ((item.priority || 'none') === p.id ? ' active' : ''), p.id === 'none' ? 'Nenhuma' : p.short);
+      const pText = p.id === 'none' ? tr('panel.tasks.prioNone', 'Nenhuma') : tr('tasks.prio.' + p.id, p.short);
+      const b = el('button', 'task-mini-btn' + ((item.priority || 'none') === p.id ? ' active' : ''), pText);
       b.type = 'button';
       b.addEventListener('click', () => {
         item.priority = p.id;
@@ -577,14 +583,14 @@ const TasksPage = {
 
     // Categoria
     const tagField = el('div', 'task-detail-field');
-    tagField.append(el('span', 'task-detail-label', 'Categoria'));
+    tagField.append(el('span', 'task-detail-label', tr('tasks.category', 'Categoria')));
     const tInp = el('input', 'task-detail-input');
     tInp.type = 'text';
     tInp.maxLength = 32;
-    tInp.placeholder = 'Ex.: Estudos, Prova…';
+    tInp.placeholder = tr('tasks.categoryPlaceholder', 'Ex.: Estudos, Prova…');
     tInp.setAttribute('list', 'tasks-tag-list');
     tInp.value = item.tag || '';
-    tInp.setAttribute('aria-label', 'Alterar categoria da tarefa');
+    tInp.setAttribute('aria-label', tr('tasks.tagAria', 'Categoria'));
     tInp.addEventListener('change', () => {
       item.tag = normalizeTaskTag(tInp.value);
       Store.save();
@@ -597,13 +603,13 @@ const TasksPage = {
 
     // Anotações
     const notesField = el('div', 'task-detail-field');
-    notesField.append(el('span', 'task-detail-label', 'Anotações'));
+    notesField.append(el('span', 'task-detail-label', tr('tasks.notes', 'Anotações')));
     const ta = el('textarea', 'task-detail-notes');
     ta.rows = 2;
     ta.maxLength = 1000;
-    ta.placeholder = 'Detalhes, páginas, links ou critérios de conclusão…';
+    ta.placeholder = tr('tasks.notesPlaceholder', 'Detalhes, páginas, links ou critérios de conclusão…');
     ta.value = item.notes || '';
-    ta.setAttribute('aria-label', 'Anotações da tarefa');
+    ta.setAttribute('aria-label', tr('tasks.notes', 'Anotações'));
     ta.addEventListener('input', () => {
       item.notes = ta.value;
       Store.save();
@@ -618,7 +624,7 @@ const TasksPage = {
     const subsWrap = el('div', 'task-subtasks');
     const subs = Array.isArray(item.subtasks) ? item.subtasks : (item.subtasks = []);
     const subDone = subs.filter(s => s.done).length;
-    subsWrap.append(el('span', 'task-detail-label', 'Subtarefas' + (subs.length ? ' (' + subDone + '/' + subs.length + ')' : '')));
+    subsWrap.append(el('span', 'task-detail-label', tr('tasks.subtasks', 'Subtarefas') + (subs.length ? ' (' + subDone + '/' + subs.length + ')' : '')));
 
     if (subs.length) {
       const ul = el('div', 'task-sub-list');
@@ -626,7 +632,7 @@ const TasksPage = {
         const row = el('div', 'task-sub-row' + (st.done ? ' done' : ''));
         const cb = el('button', 'task-sub-check', svgIcon('check'));
         cb.type = 'button';
-        cb.setAttribute('aria-label', st.done ? 'Reabrir subtarefa' : 'Concluir subtarefa');
+        cb.setAttribute('aria-label', st.done ? tr('tasks.reopenSub', 'Reabrir subtarefa') : tr('tasks.doneSub', 'Concluir subtarefa'));
         cb.addEventListener('click', () => {
           st.done = !st.done;
           Store.save();
@@ -636,8 +642,8 @@ const TasksPage = {
         lbl.textContent = st.text;
         const rm = el('button', 'task-sub-del', svgIcon('close'));
         rm.type = 'button';
-        rm.title = 'Remover subtarefa';
-        rm.setAttribute('aria-label', 'Remover subtarefa');
+        rm.title = tr('tasks.removeSub', 'Remover subtarefa');
+        rm.setAttribute('aria-label', rm.title);
         rm.addEventListener('click', () => {
           item.subtasks = item.subtasks.filter(x => x.id !== st.id);
           Store.save();
@@ -653,12 +659,12 @@ const TasksPage = {
     const subInp = el('input', 'task-sub-input');
     subInp.type = 'text';
     subInp.maxLength = 200;
-    subInp.placeholder = '+ Adicionar subtarefa…';
-    subInp.setAttribute('aria-label', 'Nova subtarefa');
+    subInp.placeholder = tr('tasks.addSubPlaceholder', '+ Adicionar subtarefa…');
+    subInp.setAttribute('aria-label', tr('tasks.newSubAria', 'Nova subtarefa'));
     const subBtn = el('button', 'task-sub-btn', svgIcon('plus'));
     subBtn.type = 'submit';
-    subBtn.title = 'Adicionar subtarefa';
-    subBtn.setAttribute('aria-label', 'Adicionar subtarefa');
+    subBtn.title = tr('tasks.addSubTitle', 'Adicionar subtarefa');
+    subBtn.setAttribute('aria-label', subBtn.title);
     subForm.append(subInp, subBtn);
     subForm.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -710,9 +716,14 @@ const TasksPage = {
     if (summaryBox) {
       summaryBox.hidden = !cfg.showProgress || stats.total === 0;
       if (!summaryBox.hidden) {
-        const summaryParts = [stats.done + ' de ' + stats.total + (stats.total === 1 ? ' concluída' : ' concluídas')];
-        if (stats.overdue > 0) summaryParts.push(stats.overdue + (stats.overdue === 1 ? ' atrasada' : ' atrasadas'));
-        if (stats.dueToday > 0) summaryParts.push(stats.dueToday + ' para hoje');
+        const doneUnit = stats.total === 1 ? tr('tasks.doneOne', 'concluída') : tr('tasks.doneMany', 'concluídas');
+        const summaryParts = [tr('tasks.summaryDone', stats.done + ' de ' + stats.total + ' ' + doneUnit, { done: stats.done, total: stats.total, unit: doneUnit })];
+        if (stats.overdue > 0) {
+          summaryParts.push(stats.overdue === 1
+            ? tr('tasks.overdueOne', '1 atrasada', { n: 1 })
+            : tr('tasks.overdueMany', stats.overdue + ' atrasadas', { n: stats.overdue }));
+        }
+        if (stats.dueToday > 0) summaryParts.push(tr('tasks.forToday', stats.dueToday + ' para hoje', { n: stats.dueToday }));
         $('#tasks-summary-text').textContent = summaryParts.join(' · ');
         $('#tasks-summary-pct').textContent = stats.percent + '%';
         $('#tasks-summary-fill').style.width = stats.percent + '%';
@@ -740,14 +751,14 @@ const TasksPage = {
 
       const check = el('button', 'task-check', svgIcon('check'));
       check.type = 'button';
-      check.title = item.done ? 'Reabrir tarefa' : 'Concluir tarefa';
+      check.title = item.done ? tr('tasks.reopenTask', 'Reabrir tarefa') : tr('tasks.doneTask', 'Concluir tarefa');
       check.setAttribute('aria-label', check.title);
       check.addEventListener('click', () => this.toggle(item.id));
 
       const body = el('div', 'task-body');
       const span = el('span', 'task-text');
       span.textContent = item.text;
-      span.title = 'Duplo clique para editar';
+      span.title = tr('tasks.dblClickEdit', 'Duplo clique para editar');
       span.addEventListener('dblclick', () => this.startEdit(item.id));
       body.append(span);
 
@@ -759,8 +770,8 @@ const TasksPage = {
       if (!item.done) {
         const focusBtn = el('button', 'task-act-btn task-focus-btn', svgIcon('play'));
         focusBtn.type = 'button';
-        focusBtn.title = 'Iniciar foco nesta tarefa';
-        focusBtn.setAttribute('aria-label', 'Iniciar foco nesta tarefa');
+        focusBtn.title = tr('tasks.focusTask', 'Iniciar foco nesta tarefa');
+        focusBtn.setAttribute('aria-label', focusBtn.title);
         focusBtn.addEventListener('click', () => this.focusTask(item));
         actions.append(focusBtn);
       }
@@ -768,21 +779,21 @@ const TasksPage = {
       const hasExtra = !!(item.notes && item.notes.trim()) || (Array.isArray(item.subtasks) && item.subtasks.length > 0);
       const expBtn = el('button', 'task-act-btn task-expand-btn' + (expanded ? ' open' : '') + (hasExtra ? ' has-extra' : ''), svgIcon('chevD'));
       expBtn.type = 'button';
-      expBtn.title = expanded ? 'Ocultar detalhes' : 'Detalhes, prazo, notas e subtarefas';
+      expBtn.title = expanded ? tr('tasks.hideDetails', 'Ocultar detalhes') : tr('tasks.showDetails', 'Detalhes, prazo, notas e subtarefas');
       expBtn.setAttribute('aria-label', expBtn.title);
       expBtn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
       expBtn.addEventListener('click', () => this.toggleExpand(item.id));
 
       const edit = el('button', 'task-act-btn task-edit-btn', svgIcon('pencil'));
       edit.type = 'button';
-      edit.title = 'Renomear';
-      edit.setAttribute('aria-label', 'Editar tarefa');
+      edit.title = tr('tasks.rename', 'Renomear');
+      edit.setAttribute('aria-label', tr('tasks.editTaskAria', 'Editar tarefa'));
       edit.addEventListener('click', () => this.startEdit(item.id));
 
       const del = el('button', 'task-act-btn task-del', svgIcon('trash'));
       del.type = 'button';
-      del.title = 'Excluir';
-      del.setAttribute('aria-label', 'Excluir tarefa');
+      del.title = tr('tasks.delete', 'Excluir');
+      del.setAttribute('aria-label', tr('tasks.deleteTaskAria', 'Excluir tarefa'));
       del.addEventListener('click', () => this.remove(item.id));
 
       actions.append(expBtn, edit, del);
@@ -796,10 +807,16 @@ const TasksPage = {
       list.append(li);
     });
 
+    const overduePart = stats.overdue > 0
+      ? ' · ' + (stats.overdue === 1
+        ? tr('tasks.overdueOne', '1 atrasada', { n: 1 })
+        : tr('tasks.overdueMany', stats.overdue + ' atrasadas', { n: stats.overdue }))
+      : '';
     $('#tasks-count').textContent = stats.pending === 0
-      ? (cfg.items.length ? 'tudo em ordem' : 'uma lista limpa, uma mente limpa')
-      : stats.pending + (stats.pending === 1 ? ' pendente' : ' pendentes') +
-        (stats.overdue > 0 ? ' · ' + stats.overdue + (stats.overdue === 1 ? ' atrasada' : ' atrasadas') : '');
+      ? (cfg.items.length ? tr('tasks.countAllDone', 'tudo em ordem') : tr('tasks.countClean', 'uma lista limpa, uma mente limpa'))
+      : (stats.pending === 1
+        ? tr('tasks.countPendingOne', '1 pendente')
+        : tr('tasks.countPendingMany', stats.pending + ' pendentes', { n: stats.pending })) + overduePart;
 
     const emptyEl = $('#tasks-empty');
     if (items.length) {
@@ -809,8 +826,8 @@ const TasksPage = {
       const hasAnyFilter = !!(this.query.trim() || this.filter !== 'all' || this.tagFilter !== 'all');
       if (cfg.items.length && hasAnyFilter) {
         emptyEl.innerHTML =
-          '<p>Nenhuma tarefa corresponde à busca ou aos filtros ativos.</p>' +
-          '<button type="button" class="tasks-empty-reset" id="tasks-empty-reset">Limpar busca e filtros</button>';
+          '<p>' + tr('tasks.emptyFiltered', 'Nenhuma tarefa corresponde à busca ou aos filtros ativos.') + '</p>' +
+          '<button type="button" class="tasks-empty-reset" id="tasks-empty-reset">' + tr('tasks.emptyReset', 'Limpar busca e filtros') + '</button>';
         const resetBtn = $('#tasks-empty-reset');
         if (resetBtn) {
           resetBtn.addEventListener('click', () => {
@@ -825,7 +842,7 @@ const TasksPage = {
           });
         }
       } else {
-        emptyEl.innerHTML = 'Nada por aqui.<br>Adicione sua primeira tarefa com prazo, prioridade ou categoria.';
+        emptyEl.innerHTML = tr('tasks.emptyDefault', 'Nada por aqui.<br>Adicione sua primeira tarefa com prazo, prioridade ou categoria.');
       }
     }
 

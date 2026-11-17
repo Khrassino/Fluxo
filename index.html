@@ -51,8 +51,8 @@
   <section class="page" id="page-timer" data-page="timer">
     <div class="timer-wrap">
       <div class="timer-tabs idle-hide" role="tablist">
-        <button class="tab-btn active" data-tab="countdown" role="tab">Temporizador</button>
-        <button class="tab-btn" data-tab="stopwatch" role="tab">Cronômetro</button>
+        <button class="tab-btn active" data-tab="countdown" role="tab" data-i18n="timer.tab.countdown">Temporizador</button>
+        <button class="tab-btn" data-tab="stopwatch" role="tab" data-i18n="timer.tab.stopwatch">Cronômetro</button>
       </div>
       <div class="timer-presets idle-hide" id="timer-presets"></div>
       <div class="timer-stage">
@@ -74,11 +74,11 @@
       </div>
       <p class="timer-sessions idle-hide" id="timer-sessions"></p>
       <div class="timer-controls idle-hide">
-        <button class="icon-btn" id="timer-reset" title="Reiniciar"></button>
-        <button class="primary-btn" id="timer-toggle">Iniciar</button>
-        <button class="icon-btn" id="timer-skip" title="Pular"></button>
+        <button class="icon-btn" id="timer-reset" title="Reiniciar" data-i18n-title="timer.resetAria" data-i18n-aria="timer.resetAria"></button>
+        <button class="primary-btn" id="timer-toggle" data-i18n="timer.start">Iniciar</button>
+        <button class="icon-btn" id="timer-skip" title="Pular" data-i18n-title="timer.skipAria" data-i18n-aria="timer.skipAria"></button>
       </div>
-      <p class="timer-hint idle-hide">espaço inicia / pausa · R reinicia · S alterna</p>
+      <p class="timer-hint idle-hide" data-i18n="timer.hint">espaço inicia / pausa · R reinicia · S alterna</p>
     </div>
   </section>
 
@@ -88,19 +88,19 @@
     <div class="tracker-wrap" id="tracker-wrap">
       <header class="page-head" id="tracker-header">
         <div>
-          <h1 class="page-title">Seu progresso</h1>
+          <h1 class="page-title" data-i18n="tracker.title">Seu progresso</h1>
           <p class="page-sub" id="tracker-since">consistência vence intensidade</p>
         </div>
       </header>
       <div class="stats-grid" id="stats-grid"></div>
       <div class="chart-card" id="chart-card">
         <div class="chart-head">
-          <p class="chart-title"><span id="chart-period-label">Últimos 7 dias</span><span class="chart-unit">horas de uso</span></p>
+          <p class="chart-title"><span id="chart-period-label">Últimos 7 dias</span><span class="chart-unit" data-i18n="tracker.unitHours">horas de uso</span></p>
           <div class="chart-tools idle-hide">
             <div class="chart-types" id="chart-types"></div>
             <div class="chart-periods" id="chart-periods"></div>
             <div class="chart-yearnav" id="chart-yearnav"></div>
-            <button class="chart-export" id="chart-export" title="Exportar dados" aria-label="Exportar dados"></button>
+            <button class="chart-export" id="chart-export" title="Exportar dados" aria-label="Exportar dados" data-i18n-title="tracker.exportTitle" data-i18n-aria="tracker.exportTitle"></button>
           </div>
         </div>
         <div class="chart" id="usage-chart"></div>
@@ -118,7 +118,7 @@
       </div>
       <div class="goal-card" id="goal-card">
         <div class="goal-head">
-          <span class="goal-title">Meta diária</span>
+          <span class="goal-title" data-i18n="tracker.goalTitle">Meta diária</span>
           <b class="goal-value" id="goal-value">—</b>
         </div>
         <div class="goal-meter"><span class="goal-meter-fill" id="goal-fill"></span></div>
@@ -151,6 +151,24 @@
                 <path d="M 1.8 1.3 L 1.8 8.7" fill="none" stroke="context-stroke" stroke-width="2.1" stroke-linecap="round"></path>
                 <circle cx="5.2" cy="5" r="1.9" fill="context-stroke"></circle>
               </marker>
+              <marker id="ws-mk-circle" viewBox="0 0 10 10" refX="5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto">
+                <circle cx="5" cy="5" r="3.4" fill="context-stroke"></circle>
+              </marker>
+              <marker id="ws-mk-circle-open" viewBox="0 0 10 10" refX="5" refY="5" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" orient="auto">
+                <circle cx="5" cy="5" r="3.2" fill="var(--bg)" stroke="context-stroke" stroke-width="1.8"></circle>
+              </marker>
+              <marker id="ws-mk-square" viewBox="0 0 10 10" refX="5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto">
+                <rect x="2" y="2" width="6" height="6" rx="1" fill="context-stroke"></rect>
+              </marker>
+              <marker id="ws-mk-square-open" viewBox="0 0 10 10" refX="5" refY="5" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" orient="auto">
+                <rect x="2" y="2" width="6" height="6" rx="1" fill="var(--bg)" stroke="context-stroke" stroke-width="1.8"></rect>
+              </marker>
+              <marker id="ws-mk-diamond" viewBox="0 0 12 12" refX="6" refY="6" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" orient="auto">
+                <path d="M 6 1.2 L 10.8 6 L 6 10.8 L 1.2 6 z" fill="context-stroke"></path>
+              </marker>
+              <marker id="ws-mk-bar" viewBox="0 0 10 12" refX="5" refY="6" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="10" orient="auto">
+                <path d="M 5 1.5 L 5 10.5" fill="none" stroke="context-stroke" stroke-width="2.2" stroke-linecap="round"></path>
+              </marker>
             </defs>
             <g id="ws-arrow-layer"></g>
           </svg>
@@ -169,7 +187,7 @@
       <div class="ws-arrow-tools" id="ws-arrow-tools" hidden></div>
       <div class="ws-multi-tools" id="ws-multi-tools" hidden></div>
       <div class="ws-marquee" id="ws-marquee" hidden></div>
-      <div class="ws-drop" id="ws-drop"><span>Solte PDFs ou imagens no quadro</span></div>
+      <div class="ws-drop" id="ws-drop"><span data-i18n="ws.dropLabel">Solte PDFs ou imagens no quadro</span></div>
       <input type="file" id="ws-file-bg" accept="image/*" hidden>
       <input type="file" id="ws-file-pdf" accept="application/pdf" multiple hidden>
       <input type="file" id="ws-file-img" accept="image/*" multiple hidden>
@@ -183,7 +201,7 @@
     <div class="tasks-wrap" id="tasks-wrap">
       <header class="page-head tasks-head idle-hide">
         <div>
-          <h1 class="page-title">Tarefas</h1>
+          <h1 class="page-title" data-i18n="tasks.title">Tarefas</h1>
           <p class="page-sub" id="tasks-count">—</p>
         </div>
       </header>
@@ -200,31 +218,31 @@
 
       <form class="tasks-form" id="tasks-form">
         <div class="tasks-compose-main">
-          <input class="tasks-input" id="tasks-input" type="text" placeholder="O que precisa ser feito?" autocomplete="off" maxlength="200" aria-label="Nova tarefa">
-          <button class="add-btn" id="tasks-add" type="submit" title="Adicionar tarefa" aria-label="Adicionar tarefa"></button>
+          <input class="tasks-input" id="tasks-input" type="text" placeholder="Nova tarefa..." autocomplete="off" maxlength="200" aria-label="Nova tarefa" data-i18n-placeholder="tasks.inputPlaceholder" data-i18n-aria="tasks.addAria">
+          <button class="add-btn" id="tasks-add" type="submit" title="Adicionar tarefa" aria-label="Adicionar tarefa" data-i18n-title="tasks.addAria" data-i18n-aria="tasks.addAria"></button>
         </div>
         <div class="tasks-compose-opts" id="tasks-compose-opts">
-          <div class="tasks-compose-group" role="group" aria-label="Vencimento da nova tarefa">
-            <button type="button" class="tasks-quick-btn" data-due-preset="today">Hoje</button>
-            <button type="button" class="tasks-quick-btn" data-due-preset="tomorrow">Amanhã</button>
-            <label class="tasks-date-field" title="Escolher data de vencimento">
+          <div class="tasks-compose-group" role="group" aria-label="Vencimento da nova tarefa" data-i18n-aria="tasks.dueAria">
+            <button type="button" class="tasks-quick-btn" data-due-preset="today" data-i18n="tasks.dueToday">Hoje</button>
+            <button type="button" class="tasks-quick-btn" data-due-preset="tomorrow" data-i18n="tasks.dueTomorrow">Amanhã</button>
+            <label class="tasks-date-field" title="Escolher data de vencimento" data-i18n-title="tasks.dueAria">
               <span class="tasks-date-ico" id="tasks-due-ico"></span>
-              <input type="date" id="tasks-due-input" aria-label="Data de vencimento">
-              <span class="tasks-date-label" id="tasks-due-label">Prazo</span>
+              <input type="date" id="tasks-due-input" aria-label="Data de vencimento" data-i18n-aria="tasks.dueAria">
+              <span class="tasks-date-label" id="tasks-due-label" data-i18n="tasks.dueLabel">Prazo</span>
             </label>
           </div>
-          <label class="tasks-meta-field" title="Prioridade">
+          <label class="tasks-meta-field" title="Prioridade" data-i18n-title="tasks.priority">
             <span class="tasks-meta-ico" id="tasks-prio-ico"></span>
-            <select id="tasks-priority-input" aria-label="Prioridade da nova tarefa">
-              <option value="none">Prioridade</option>
-              <option value="low">Baixa</option>
-              <option value="medium">Média</option>
-              <option value="high">Alta</option>
+            <select id="tasks-priority-input" aria-label="Prioridade da nova tarefa" data-i18n-aria="tasks.prioAria">
+              <option value="none" data-i18n="tasks.priority">Prioridade</option>
+              <option value="low" data-i18n="tasks.prio.low">Baixa</option>
+              <option value="medium" data-i18n="tasks.prio.medium">Média</option>
+              <option value="high" data-i18n="tasks.prio.high">Alta</option>
             </select>
           </label>
-          <label class="tasks-meta-field tasks-tag-field" title="Categoria ou matéria">
+          <label class="tasks-meta-field tasks-tag-field" title="Categoria ou matéria" data-i18n-title="tasks.category">
             <span class="tasks-meta-ico" id="tasks-tag-ico"></span>
-            <input type="text" id="tasks-tag-input" list="tasks-tag-list" placeholder="Categoria…" maxlength="32" autocomplete="off" aria-label="Categoria da tarefa">
+            <input type="text" id="tasks-tag-input" list="tasks-tag-list" placeholder="Tag…" maxlength="32" autocomplete="off" aria-label="Categoria da tarefa" data-i18n-placeholder="tasks.tagPlaceholder" data-i18n-aria="tasks.tagAria">
             <datalist id="tasks-tag-list"></datalist>
           </label>
         </div>
@@ -233,40 +251,40 @@
       <div class="tasks-controls" id="tasks-controls">
         <div class="tasks-search-wrap" id="tasks-search-wrap">
           <span class="tasks-search-ico" id="tasks-search-ico"></span>
-          <input type="search" class="tasks-search-input" id="tasks-search" placeholder="Buscar tarefas… (/)" autocomplete="off" aria-label="Buscar tarefas">
-          <button type="button" class="tasks-search-clear" id="tasks-search-clear" title="Limpar busca" aria-label="Limpar busca" hidden></button>
+          <input type="search" class="tasks-search-input" id="tasks-search" placeholder="Buscar tarefas… (/)" autocomplete="off" aria-label="Buscar tarefas" data-i18n-placeholder="tasks.searchPlaceholder" data-i18n-aria="tasks.searchAria">
+          <button type="button" class="tasks-search-clear" id="tasks-search-clear" title="Limpar busca" aria-label="Limpar busca" data-i18n-title="tasks.searchClear" data-i18n-aria="tasks.searchClear" hidden></button>
         </div>
         <div class="tasks-toolbar">
           <div class="filter-chips" id="tasks-filters" role="tablist" aria-label="Filtrar tarefas">
-            <button type="button" class="filter-chip active" data-filter="all">Todas <span class="filter-num" data-fcount="all">0</span></button>
-            <button type="button" class="filter-chip" data-filter="pending">Pendentes <span class="filter-num" data-fcount="pending">0</span></button>
-            <button type="button" class="filter-chip" data-filter="today">Hoje <span class="filter-num" data-fcount="today">0</span></button>
-            <button type="button" class="filter-chip" data-filter="overdue">Atrasadas <span class="filter-num" data-fcount="overdue">0</span></button>
-            <button type="button" class="filter-chip" data-filter="done">Concluídas <span class="filter-num" data-fcount="done">0</span></button>
+            <button type="button" class="filter-chip active" data-filter="all"><span data-i18n="tasks.filter.all">Todas</span> <span class="filter-num" data-fcount="all">0</span></button>
+            <button type="button" class="filter-chip" data-filter="pending"><span data-i18n="tasks.filter.pending">Pendentes</span> <span class="filter-num" data-fcount="pending">0</span></button>
+            <button type="button" class="filter-chip" data-filter="today"><span data-i18n="tasks.filter.today">Hoje</span> <span class="filter-num" data-fcount="today">0</span></button>
+            <button type="button" class="filter-chip" data-filter="overdue"><span data-i18n="tasks.filter.overdue">Atrasadas</span> <span class="filter-num" data-fcount="overdue">0</span></button>
+            <button type="button" class="filter-chip" data-filter="done"><span data-i18n="tasks.filter.done">Concluídas</span> <span class="filter-num" data-fcount="done">0</span></button>
           </div>
           <div class="tasks-toolbar-right">
-            <select class="tasks-select" id="tasks-tag-filter" aria-label="Filtrar por categoria">
-              <option value="all">Todas categorias</option>
+            <select class="tasks-select" id="tasks-tag-filter" aria-label="Filtrar por categoria" data-i18n-aria="tasks.tagFilterAria">
+              <option value="all" data-i18n="tasks.allTags">Todas tags</option>
             </select>
-            <select class="tasks-select" id="tasks-sort" aria-label="Ordenar tarefas">
-              <option value="recent">Mais recentes</option>
-              <option value="due">Vencimento</option>
-              <option value="priority">Prioridade</option>
-              <option value="oldest">Mais antigas</option>
-              <option value="alpha">A–Z</option>
+            <select class="tasks-select" id="tasks-sort" aria-label="Ordenar tarefas" data-i18n-aria="tasks.sortAria">
+              <option value="recent" data-i18n="panel.tasks.sortRecent">Recentes</option>
+              <option value="due" data-i18n="panel.tasks.sortDue">Vencimento</option>
+              <option value="priority" data-i18n="panel.tasks.sortPriority">Prioridade</option>
+              <option value="oldest" data-i18n="panel.tasks.sortOldest">Antigas</option>
+              <option value="alpha" data-i18n="panel.tasks.sortAlpha">A–Z</option>
             </select>
-            <button type="button" class="link-btn" id="tasks-clear">limpar concluídas</button>
+            <button type="button" class="link-btn" id="tasks-clear" data-i18n="tasks.clearDone">limpar concluídas</button>
           </div>
         </div>
       </div>
 
       <div class="tasks-undo" id="tasks-undo" hidden>
         <span id="tasks-undo-msg">Tarefa removida</span>
-        <button type="button" class="tasks-undo-btn" id="tasks-undo-btn">Desfazer</button>
+        <button type="button" class="tasks-undo-btn" id="tasks-undo-btn" data-i18n="tasks.undo">Desfazer</button>
       </div>
 
       <ul id="task-list"></ul>
-      <div class="tasks-empty" id="tasks-empty">Nada por aqui.<br>Adicione sua primeira tarefa</div>
+      <div class="tasks-empty" id="tasks-empty" data-i18n-html="tasks.emptyDefault">Nada por aqui.<br>Adicione sua primeira tarefa</div>
     </div>
   </section>
 
@@ -277,10 +295,10 @@
 
 <!-- painel de personalização -->
 <div id="panel-backdrop"></div>
-<aside id="panel" aria-label="Personalizar">
+<aside id="panel" aria-label="Personalizar" data-i18n-aria="panel.title">
   <header class="panel-head">
-    <h2 id="panel-title">Personalizar</h2>
-    <button class="icon-btn" id="panel-close" title="Fechar"></button>
+    <h2 id="panel-title" data-i18n="panel.title">Personalizar</h2>
+    <button class="icon-btn" id="panel-close" title="Fechar" data-i18n-title="panel.close" data-i18n-aria="panel.close"></button>
   </header>
   <div id="panel-body"></div>
 </aside>
@@ -289,6 +307,7 @@
 <audio id="bgm" loop preload="none"></audio>
 
 <script src="js/util.js"></script>
+<script src="js/i18n.js"></script>
 <script src="js/storage.js"></script>
 <script src="js/themes.js"></script>
 <script src="js/audio.js"></script>
@@ -304,6 +323,7 @@
 <script src="js/ink.js"></script>
 <script src="js/ws-store.js"></script>
 <script src="js/ws-brain.js"></script>
+<script src="js/ws-math.js"></script>
 <script src="js/workspace.js"></script>
 <script src="js/layout-edit.js"></script>
 <script src="js/router.js"></script>

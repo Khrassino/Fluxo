@@ -28,8 +28,25 @@ const TRACKER_WIDGET_DEFS = [
 ];
 
 const TrackerPage = {
+  typeLabel(id) {
+    const tp = TRACKER_TYPES.find(x => x.id === id);
+    return tr('tracker.type.' + id, tp ? tp.label : id);
+  },
+
+  typeShort(id) {
+    const tp = TRACKER_TYPES.find(x => x.id === id);
+    return tr('tracker.typeShort.' + id, tp ? (tp.short || tp.label) : id);
+  },
+
+  widgetLabel(id) {
+    const w = TRACKER_WIDGET_DEFS.find(x => x.id === id);
+    return tr('tracker.widget.' + id, w ? w.label : id);
+  },
+
   init() {
     $('#chart-export').innerHTML = svgIcon('download');
+    $('#chart-export').title = tr('tracker.exportTitle', 'Exportar dados');
+    $('#chart-export').setAttribute('aria-label', tr('tracker.exportTitle', 'Exportar dados'));
     $('#chart-export').addEventListener('click', () => this.exportData());
     const ghost = $('#ghost-tracker');
     if (ghost) ghost.innerHTML = svgIcon('chart');
@@ -111,13 +128,20 @@ const TrackerPage = {
 
   /* -------- controles do gráfico -------- */
   renderControls() {
-    const tr = Store.state.tracker;
+    const trState = Store.state.tracker;
+    const expBtn = $('#chart-export');
+    if (expBtn) {
+      const expLbl = tr('tracker.exportTitle', 'Exportar dados');
+      expBtn.title = expLbl;
+      expBtn.setAttribute('aria-label', expLbl);
+    }
     const types = $('#chart-types');
     types.innerHTML = '';
     TRACKER_TYPES.forEach(tp => {
-      const b = el('button', 'chart-btn' + (tr.chart === tp.id ? ' active' : ''), tp.short || tp.label);
-      b.title = 'Gráfico de ' + tp.label.toLowerCase();
-      b.setAttribute('aria-label', tp.label);
+      const lbl = this.typeLabel(tp.id);
+      const b = el('button', 'chart-btn' + (trState.chart === tp.id ? ' active' : ''), this.typeShort(tp.id));
+      b.title = tr('tracker.chartOf', 'Gráfico de ' + lbl.toLowerCase(), { label: lbl.toLowerCase() });
+      b.setAttribute('aria-label', lbl);
       b.addEventListener('click', () => {
         Store.state.tracker.chart = tp.id;
         Store.save();
@@ -130,8 +154,10 @@ const TrackerPage = {
     const periods = $('#chart-periods');
     periods.innerHTML = '';
     TRACKER_PERIODS.forEach(p => {
-      const b = el('button', 'chart-btn' + (+tr.period === p ? ' active' : ''), p === 365 ? '1 ano' : p + 'd');
-      b.title = p === 365 ? 'Ano completo (inclui dias futuros)' : 'Últimos ' + p + ' dias';
+      const b = el('button', 'chart-btn' + (+trState.period === p ? ' active' : ''), p === 365 ? tr('panel.tracker.year1', '1 ano') : p + 'd');
+      b.title = p === 365
+        ? tr('tracker.fullYearTitle', 'Ano completo (inclui dias futuros)')
+        : tr('tracker.lastDaysTitle', 'Últimos ' + p + ' dias', { n: p });
       b.addEventListener('click', () => {
         Store.state.tracker.period = p;
         if (p !== 365) Store.state.tracker.yearOffset = 0;
@@ -144,25 +170,25 @@ const TrackerPage = {
 
     const nav = $('#chart-yearnav');
     nav.innerHTML = '';
-    const showYear = +tr.period === 365;
+    const showYear = +trState.period === 365;
     nav.hidden = !showYear;
     if (showYear) {
       const currentYear = new Date().getFullYear();
-      const year = currentYear + (Number(tr.yearOffset) || 0);
+      const year = currentYear + (Number(trState.yearOffset) || 0);
       const prev = el('button', 'chart-btn year-btn', svgIcon('chevL'));
-      prev.title = 'Ano anterior';
+      prev.title = tr('tracker.prevYear', 'Ano anterior');
       prev.addEventListener('click', () => {
-        Store.state.tracker.yearOffset = (Number(tr.yearOffset) || 0) - 1;
+        Store.state.tracker.yearOffset = (Number(trState.yearOffset) || 0) - 1;
         Store.save();
         this.renderControls();
         this.renderChart();
       });
       const next = el('button', 'chart-btn year-btn', svgIcon('chevR'));
-      next.title = 'Próximo ano';
+      next.title = tr('tracker.nextYear', 'Próximo ano');
       next.disabled = year >= currentYear;
       next.addEventListener('click', () => {
         if (year >= currentYear) return;
-        Store.state.tracker.yearOffset = Math.min(0, (Number(tr.yearOffset) || 0) + 1);
+        Store.state.tracker.yearOffset = Math.min(0, (Number(trState.yearOffset) || 0) + 1);
         Store.save();
         this.renderControls();
         this.renderChart();
@@ -175,15 +201,16 @@ const TrackerPage = {
   },
 
   renderChart2Controls() {
-    const tr = Store.state.tracker;
-    const c2 = tr.chart2 = tr.chart2 || { on: false, chart: 'ring', period: 365, yearOffset: 0, metric: 'focus' };
+    const trState = Store.state.tracker;
+    const c2 = trState.chart2 = trState.chart2 || { on: false, chart: 'ring', period: 365, yearOffset: 0, metric: 'focus' };
     const types = $('#chart2-types');
     if (!types) return;
     types.innerHTML = '';
     TRACKER_TYPES.forEach(tp => {
-      const b = el('button', 'chart-btn' + (c2.chart === tp.id ? ' active' : ''), tp.short || tp.label);
-      b.title = 'Gráfico de ' + tp.label.toLowerCase();
-      b.setAttribute('aria-label', tp.label);
+      const lbl = this.typeLabel(tp.id);
+      const b = el('button', 'chart-btn' + (c2.chart === tp.id ? ' active' : ''), this.typeShort(tp.id));
+      b.title = tr('tracker.chartOf', 'Gráfico de ' + lbl.toLowerCase(), { label: lbl.toLowerCase() });
+      b.setAttribute('aria-label', lbl);
       b.addEventListener('click', () => {
         c2.chart = tp.id;
         Store.save();
@@ -197,8 +224,10 @@ const TrackerPage = {
     if (periods) {
       periods.innerHTML = '';
       TRACKER_PERIODS.forEach(p => {
-        const b = el('button', 'chart-btn' + (+c2.period === p ? ' active' : ''), p === 365 ? '1 ano' : p + 'd');
-        b.title = p === 365 ? 'Ano completo' : 'Últimos ' + p + ' dias';
+        const b = el('button', 'chart-btn' + (+c2.period === p ? ' active' : ''), p === 365 ? tr('panel.tracker.year1', '1 ano') : p + 'd');
+        b.title = p === 365
+          ? tr('tracker.fullYearShort', 'Ano completo')
+          : tr('tracker.lastDaysTitle', 'Últimos ' + p + ' dias', { n: p });
         b.addEventListener('click', () => {
           c2.period = p;
           if (p !== 365) c2.yearOffset = 0;
@@ -219,7 +248,7 @@ const TrackerPage = {
         const currentYear = new Date().getFullYear();
         const year = currentYear + (Number(c2.yearOffset) || 0);
         const prev = el('button', 'chart-btn year-btn', svgIcon('chevL'));
-        prev.title = 'Ano anterior';
+        prev.title = tr('tracker.prevYear', 'Ano anterior');
         prev.addEventListener('click', () => {
           c2.yearOffset = (Number(c2.yearOffset) || 0) - 1;
           Store.save();
@@ -227,7 +256,7 @@ const TrackerPage = {
           this.renderChart2();
         });
         const next = el('button', 'chart-btn year-btn', svgIcon('chevR'));
-        next.title = 'Próximo ano';
+        next.title = tr('tracker.nextYear', 'Próximo ano');
         next.disabled = year >= currentYear;
         next.addEventListener('click', () => {
           if (year >= currentYear) return;
@@ -243,20 +272,21 @@ const TrackerPage = {
 
   /* -------- conteúdo -------- */
   render() {
-    const tr = Store.state.tracker;
+    const trState = Store.state.tracker;
     const streak = Usage.streak();
+    const loc = typeof appLocale === 'function' ? appLocale() : 'pt-BR';
 
     if (Store.state.meta.firstDay) {
       const d = new Date(Store.state.meta.firstDay + 'T12:00:00');
-      $('#tracker-since').textContent = 'acompanhando desde ' +
-        new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'short', year: 'numeric' }).format(d);
+      const sinceDate = new Intl.DateTimeFormat(loc, { day: 'numeric', month: 'short', year: 'numeric' }).format(d);
+      $('#tracker-since').textContent = tr('tracker.since', 'acompanhando desde ' + sinceDate, { date: sinceDate });
     }
 
     const today = todayKey();
     const tasksToday = Store.state.tasks.items.filter(i => i.done && (i.doneAt || '').startsWith(today)).length;
-    const focusTotal = Object.keys(tr.focusByDay).reduce((s, k) => s + tr.focusByDay[k], 0);
-    const focusToday = tr.focusByDay[today] || 0;
-    const goalPct = tr.goal > 0 ? Math.round(clamp(Usage.todaySeconds() / (tr.goal * 3600), 0, 1) * 100) : 0;
+    const focusTotal = Object.keys(trState.focusByDay).reduce((s, k) => s + trState.focusByDay[k], 0);
+    const focusToday = trState.focusByDay[today] || 0;
+    const goalPct = trState.goal > 0 ? Math.round(clamp(Usage.todaySeconds() / (trState.goal * 3600), 0, 1) * 100) : 0;
     const daysUsed = Usage.daysUsed();
     const totalSec = Usage.totalSeconds();
     const avgSec = daysUsed > 0 ? Math.round(totalSec / daysUsed) : 0;
@@ -265,50 +295,62 @@ const TrackerPage = {
 
     // Localiza o melhor dia de foco histórico
     let bestKey = null, bestSec = 0;
-    Object.keys(tr.usageByDay || {}).forEach(k => {
-      if (tr.usageByDay[k] > bestSec) {
-        bestSec = tr.usageByDay[k];
+    Object.keys(trState.usageByDay || {}).forEach(k => {
+      if (trState.usageByDay[k] > bestSec) {
+        bestSec = trState.usageByDay[k];
         bestKey = k;
       }
     });
-    let bestSub = 'registre seu foco';
+    let bestSub = tr('tracker.sub.bestEmpty', 'registre seu foco');
     if (bestKey && bestSec > 0) {
       const bd = new Date(bestKey + 'T12:00:00');
-      bestSub = 'recorde em ' + new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'short' }).format(bd);
+      const bDate = new Intl.DateTimeFormat(loc, { day: 'numeric', month: 'short' }).format(bd);
+      bestSub = tr('tracker.sub.bestOn', 'recorde em ' + bDate, { date: bDate });
     }
 
+    const dayUnit = streak === 1 ? tr('tracker.sub.dayOne', 'dia') : tr('tracker.sub.dayMany', 'dias');
     // Catálogo com dados calculados para os 8 possíveis cartões
     const cardsMap = {
       days: {
-        icon: 'calendar', label: 'Dias de uso', value: daysUsed,
-        sub: streak > 0 ? ('🔥 sequência de ' + streak + (streak === 1 ? ' dia' : ' dias')) : 'comece hoje sua sequência'
+        icon: 'calendar', label: this.widgetLabel('days'), value: daysUsed,
+        sub: streak > 0
+          ? tr('tracker.sub.streak', '🔥 sequência de ' + streak + ' ' + dayUnit, { n: streak, unit: dayUnit })
+          : tr('tracker.sub.streakStart', 'comece hoje sua sequência')
       },
       hours: {
-        icon: 'clock', label: 'Horas de uso', raw: totalSec,
-        sub: 'hoje: ' + fmtHours(Usage.todaySeconds())
+        icon: 'clock', label: this.widgetLabel('hours'), raw: totalSec,
+        sub: tr('tracker.sub.todayHours', 'hoje: ' + fmtHours(Usage.todaySeconds()), { h: fmtHours(Usage.todaySeconds()) })
       },
       tasks: {
-        icon: 'checkc', label: 'Tarefas realizadas', value: tr.tasksCompleted,
-        sub: tasksToday > 0 ? ('+ ' + tasksToday + ' hoje') : 'nenhuma hoje ainda'
+        icon: 'checkc', label: this.widgetLabel('tasks'), value: trState.tasksCompleted,
+        sub: tasksToday > 0
+          ? tr('tracker.sub.plusToday', '+ ' + tasksToday + ' hoje', { n: tasksToday })
+          : tr('tracker.sub.noneToday', 'nenhuma hoje ainda')
       },
       focus: {
-        icon: 'target', label: 'Sessões de foco', value: focusTotal,
-        sub: focusToday > 0 ? (focusToday + ' hoje') : 'nenhuma hoje ainda'
+        icon: 'target', label: this.widgetLabel('focus'), value: focusTotal,
+        sub: focusToday > 0
+          ? tr('tracker.sub.focusToday', focusToday + ' hoje', { n: focusToday })
+          : tr('tracker.sub.noneToday', 'nenhuma hoje ainda')
       },
       goal: {
-        icon: 'flame', label: 'Meta de hoje', value: goalPct + '%',
-        sub: tr.goal > 0 ? (fmtHours(Usage.todaySeconds()) + ' de ' + tr.goal + 'h') : 'defina uma meta no painel'
+        icon: 'flame', label: this.widgetLabel('goal'), value: goalPct + '%',
+        sub: trState.goal > 0
+          ? tr('tracker.sub.goalOf', fmtHours(Usage.todaySeconds()) + ' de ' + trState.goal + 'h', { h: fmtHours(Usage.todaySeconds()), g: trState.goal })
+          : tr('tracker.sub.noGoalSet', 'defina uma meta no painel')
       },
       avg: {
-        icon: 'chart', label: 'Média diária', raw: avgSec,
-        sub: 'por dia ativo'
+        icon: 'chart', label: this.widgetLabel('avg'), raw: avgSec,
+        sub: tr('tracker.sub.perActiveDay', 'por dia ativo')
       },
       pending: {
-        icon: 'tasks', label: 'Tarefas pendentes', value: pendingTasks,
-        sub: totalTasks ? ('de ' + totalTasks + ' no total') : 'nenhuma pendente'
+        icon: 'tasks', label: this.widgetLabel('pending'), value: pendingTasks,
+        sub: totalTasks
+          ? tr('tracker.sub.ofTotal', 'de ' + totalTasks + ' no total', { n: totalTasks })
+          : tr('tracker.sub.nonePending', 'nenhuma pendente')
       },
       best: {
-        icon: 'sparkle', label: 'Melhor dia', raw: bestSec,
+        icon: 'sparkle', label: this.widgetLabel('best'), raw: bestSec,
         sub: bestSub
       }
     };
@@ -329,7 +371,7 @@ const TrackerPage = {
       // Ferramentas de edição na tela (visíveis em layout-editing)
       const tools = el('div', 'stat-edit-tools');
       const sizeBtn = el('button', 'stat-edit-btn', w.size === '2x' ? '2x' : '1x');
-      sizeBtn.title = 'Alternar tamanho (1x ou 2x)';
+      sizeBtn.title = tr('tracker.sizeToggleTitle', 'Alternar tamanho (1x ou 2x)');
       sizeBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         const allW = this.widgets();
@@ -343,7 +385,7 @@ const TrackerPage = {
         }
       });
       const rmBtn = el('button', 'stat-remove-btn', '×');
-      rmBtn.title = 'Remover cartão';
+      rmBtn.title = tr('tracker.removeCardTitle', 'Remover cartão');
       rmBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         const allW = this.widgets();
@@ -354,7 +396,7 @@ const TrackerPage = {
           Store.save();
           this.render();
           if (typeof LayoutEdit !== 'undefined' && LayoutEdit.active) LayoutEdit.decorate();
-          toast('Cartão removido · recupere na barra inferior', 'eyeoff');
+          toast(tr('tracker.removeCardToast', 'Cartão removido · recupere na barra inferior'), 'eyeoff');
         }
       });
       tools.append(sizeBtn, rmBtn);
@@ -378,12 +420,13 @@ const TrackerPage = {
     const num = parseFloat(str.replace(',', '.')) || 0;
     const suffix = str.replace(/^[\d.,\s-]+/, '');
     if (!num) { elx.textContent = '0' + suffix; return; }
+    const loc = typeof appLocale === 'function' ? appLocale() : 'pt-BR';
     const t0 = performance.now();
     const dur = 550;
     const step = (now) => {
       const p = clamp((now - t0) / dur, 0, 1);
       const eased = 1 - Math.pow(1 - p, 3);
-      elx.textContent = Math.round(num * eased).toLocaleString('pt-BR') + suffix;
+      elx.textContent = Math.round(num * eased).toLocaleString(loc) + suffix;
       if (p < 1) requestAnimationFrame(step);
     };
     requestAnimationFrame(step);
@@ -432,11 +475,11 @@ const TrackerPage = {
 
   renderChart(data) {
     data = data || this.chartDays();
-    const tr = Store.state.tracker;
-    const type = TRACKER_TYPES.some(t => t.id === tr.chart) ? tr.chart : 'bars';
+    const trState = Store.state.tracker;
+    const type = TRACKER_TYPES.some(t => t.id === trState.chart) ? trState.chart : 'bars';
     $('#chart-period-label').textContent = data.year
-      ? 'Ano de ' + data.year
-      : 'Últimos ' + data.period + ' dias';
+      ? tr('tracker.yearOf', 'Ano de ' + data.year, { year: data.year })
+      : tr('tracker.lastDaysTitle', 'Últimos ' + data.period + ' dias', { n: data.period });
     const chart = $('#usage-chart');
     chart.innerHTML = '';
     chart.className = 'chart chart-' + type;
@@ -444,8 +487,8 @@ const TrackerPage = {
   },
 
   renderChart2() {
-    const tr = Store.state.tracker;
-    const c2 = tr.chart2 = tr.chart2 || { on: false, chart: 'ring', period: 365, yearOffset: 0, metric: 'focus' };
+    const trState = Store.state.tracker;
+    const c2 = trState.chart2 = trState.chart2 || { on: false, chart: 'ring', period: 365, yearOffset: 0, metric: 'focus' };
     const chartCard = $('#chart2-card');
     const chart = $('#usage-chart2');
     if (!chartCard || !chart) return;
@@ -455,9 +498,11 @@ const TrackerPage = {
     const type = TRACKER_TYPES.some(t => t.id === c2.chart) ? c2.chart : 'ring';
 
     const pLab = $('#chart2-period-label');
-    if (pLab) pLab.textContent = data.year ? 'Ano de ' + data.year : 'Últimos ' + data.period + ' dias';
+    if (pLab) pLab.textContent = data.year
+      ? tr('tracker.yearOf', 'Ano de ' + data.year, { year: data.year })
+      : tr('tracker.lastDaysTitle', 'Últimos ' + data.period + ' dias', { n: data.period });
     const uLab = $('#chart2-unit');
-    if (uLab) uLab.textContent = isHours ? 'horas de uso' : 'sessões de foco';
+    if (uLab) uLab.textContent = isHours ? tr('tracker.unitHours', 'horas de uso') : tr('tracker.unitFocus', 'sessões de foco');
 
     chart.innerHTML = '';
     chart.className = 'chart chart-' + type;
@@ -496,7 +541,8 @@ const TrackerPage = {
     if (v <= 0) return '0';
     if (v >= 3600) {
       const h = v / 3600;
-      return (h % 1 === 0 ? h.toFixed(0) : h.toFixed(1).replace('.', ',')) + 'h';
+      const dec = (typeof getLang === 'function' && getLang() === 'en') ? '.' : ',';
+      return (h % 1 === 0 ? h.toFixed(0) : h.toFixed(1).replace('.', dec)) + 'h';
     }
     return Math.round(v / 60) + 'min';
   },
@@ -532,14 +578,15 @@ const TrackerPage = {
   },
 
   xTickLabel(day, period) {
+    const loc = typeof appLocale === 'function' ? appLocale() : 'pt-BR';
     if (period === 365) {
-      return new Intl.DateTimeFormat('pt-BR', { month: 'short' })
+      return new Intl.DateTimeFormat(loc, { month: 'short' })
         .format(day.d).replace('.', '').replace(' de ', ' ');
     }
     if (period <= 14) {
-      return new Intl.DateTimeFormat('pt-BR', { weekday: 'short' }).format(day.d).replace('.', '');
+      return new Intl.DateTimeFormat(loc, { weekday: 'short' }).format(day.d).replace('.', '');
     }
-    return new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'short' })
+    return new Intl.DateTimeFormat(loc, { day: 'numeric', month: 'short' })
       .format(day.d).replace('.', '').replace(' de ', ' ');
   },
 
@@ -551,7 +598,8 @@ const TrackerPage = {
     const band = pw / n;
     const thick = clamp(band * 0.62, n > 180 ? 0.8 : n > 90 ? 1.4 : 3, 34);
     const yAt = v => mt + ph - clamp(v / axisMax, 0, 1) * ph;
-    let svg = '<svg class="chart-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Gráfico de barras">';
+    const ariaLbl = tr('tracker.chartOf', 'Gráfico de barras', { label: this.typeLabel('bars') });
+    let svg = '<svg class="chart-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="' + ariaLbl + '">';
 
     // eixos e grade
     for (let i = 0; i <= 4; i++) {
@@ -566,7 +614,7 @@ const TrackerPage = {
       const gy = yAt(goalSec);
       svg += '<line class="goal-line-svg" x1="' + ml + '" y1="' + gy.toFixed(1) + '" x2="' + (W - mr) +
         '" y2="' + gy.toFixed(1) + '"/><text class="goal-line-label" x="' + (W - mr) + '" y="' +
-        (gy - 5).toFixed(1) + '" text-anchor="end">meta</text>';
+        (gy - 5).toFixed(1) + '" text-anchor="end">' + tr('tracker.goalLabel', 'meta') + '</text>';
     }
 
     days.forEach((x, i) => {
@@ -592,7 +640,7 @@ const TrackerPage = {
     svg += '</svg>';
     chart.append(el('div', 'chart-canvas', svg));
     if (goalSec > 0 && isHours) {
-      chart.append(el('p', 'chart-caption', '<i class="legend-dash"></i> linha tracejada: meta de ' + fmtHours(goalSec) + ' por dia'));
+      chart.append(el('p', 'chart-caption', '<i class="legend-dash"></i> ' + tr('tracker.goalCaption', 'linha tracejada: meta de ' + fmtHours(goalSec) + ' por dia', { h: fmtHours(goalSec) })));
     }
   },
 
@@ -604,7 +652,8 @@ const TrackerPage = {
     const xAt = i => ml + (n === 1 ? pw / 2 : (i / (n - 1)) * pw);
     const yAt = v => mt + ph - clamp(v / axisMax, 0, 1) * ph;
     const gradId = 'chart-grad-' + Math.random().toString(36).slice(2, 8);
-    let svg = '<svg class="chart-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Gráfico de linha">' +
+    const ariaLbl = tr('tracker.chartOf', 'Gráfico de linha', { label: this.typeLabel('line') });
+    let svg = '<svg class="chart-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="' + ariaLbl + '">' +
       '<defs><linearGradient id="' + gradId + '" x1="0" y1="0" x2="0" y2="1">' +
       '<stop offset="0%" stop-color="var(--accent)" stop-opacity="0.28"/>' +
       '<stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>';
@@ -621,7 +670,7 @@ const TrackerPage = {
       const gy = yAt(goalSec);
       svg += '<line class="goal-line-svg" x1="' + ml + '" y1="' + gy.toFixed(1) + '" x2="' + (W - mr) +
         '" y2="' + gy.toFixed(1) + '"/><text class="goal-line-label" x="' + (W - mr) + '" y="' +
-        (gy - 5).toFixed(1) + '" text-anchor="end">meta</text>';
+        (gy - 5).toFixed(1) + '" text-anchor="end">' + tr('tracker.goalLabel', 'meta') + '</text>';
     }
 
     let line = '', area = 'M ' + xAt(0).toFixed(1) + ' ' + (mt + ph).toFixed(1);
@@ -667,12 +716,14 @@ const TrackerPage = {
 
     const total = days.reduce((s, x) => s + (isHours ? x.sec : x.val), 0);
     const peak = days.reduce((m, x) => Math.max(m, isHours ? x.sec : x.val), 0);
+    const totalFmt = isHours ? fmtHours(total) : total;
+    const peakFmt = isHours ? fmtHours(peak) : peak;
     chart.append(el('div', 'chart-legend',
-      '<span><i class="legend-line"></i>tempo diário</span>' +
-      '<span><i class="legend-dash"></i>' + (goalSec > 0 && isHours ? 'meta ' + fmtHours(goalSec) : 'sem meta definida') + '</span>' +
+      '<span><i class="legend-line"></i>' + tr('tracker.legendDaily', 'tempo diário') + '</span>' +
+      '<span><i class="legend-dash"></i>' + (goalSec > 0 && isHours ? tr('tracker.legendGoal', 'meta ' + fmtHours(goalSec), { h: fmtHours(goalSec) }) : tr('tracker.legendNoGoal', 'sem meta definida')) + '</span>' +
       '<span class="legend-spacer"></span>' +
-      '<span>total ' + (isHours ? fmtHours(total) : total) + '</span>' +
-      '<span>pico ' + (isHours ? fmtHours(peak) : peak) + '</span>'));
+      '<span>' + tr('tracker.legendTotal', 'total ' + totalFmt, { v: totalFmt }) + '</span>' +
+      '<span>' + tr('tracker.legendPeak', 'pico ' + peakFmt, { v: peakFmt }) + '</span>'));
   },
 
   /* heatmap em grade — calendário estilo Anki */
@@ -685,6 +736,8 @@ const TrackerPage = {
     wrap.style.setProperty('--cell', cell + 'px');
     wrap.style.setProperty('--gap', gap + 'px');
     const unit = isHours ? 'uso' : 'focos';
+    const loc = typeof appLocale === 'function' ? appLocale() : 'pt-BR';
+    const isEn = typeof getLang === 'function' && getLang() === 'en';
     let grid, months;
 
     if (compact) {
@@ -697,9 +750,9 @@ const TrackerPage = {
       const rows = Math.ceil(cells.length / 7);
       months = el('div', 'heat-month-row');
       months.append(el('span', 'heat-month-name',
-        new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(first)));
+        new Intl.DateTimeFormat(loc, { month: 'long', year: 'numeric' }).format(first)));
       const weekdays = el('div', 'heat-weekdays');
-      ['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'].forEach(w => weekdays.append(el('span', null, w)));
+      (isEn ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] : ['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom']).forEach(w => weekdays.append(el('span', null, w)));
       grid = el('div', 'heat-grid heat-compact');
       grid.style.setProperty('--cell', cell + 'px');
       grid.style.setProperty('--gap', gap + 'px');
@@ -735,14 +788,14 @@ const TrackerPage = {
         const m = day.d.getMonth();
         if (m !== lastMonth) {
           lastMonth = m;
-          const lab = el('span', 'heat-month', new Intl.DateTimeFormat('pt-BR', { month: 'short' }).format(day.d).replace('.', ''));
+          const lab = el('span', 'heat-month', new Intl.DateTimeFormat(loc, { month: 'short' }).format(day.d).replace('.', ''));
           lab.style.gridColumn = col;
           months.append(lab);
         }
       });
 
       const weekdays = el('div', 'heat-weekdays heat-weekdays-col');
-      ['seg', '', 'qua', '', 'sex', '', 'dom'].forEach(w => weekdays.append(el('span', null, w)));
+      (isEn ? ['Mon', '', 'Wed', '', 'Fri', '', 'Sun'] : ['seg', '', 'qua', '', 'sex', '', 'dom']).forEach(w => weekdays.append(el('span', null, w)));
 
       days.forEach((day, i) => {
         const slot = lead + i;
@@ -779,15 +832,15 @@ const TrackerPage = {
     const active = days.filter(x => (isHours ? x.sec : x.val) > 0).length;
     const peak = days.reduce((m, x) => Math.max(m, isHours ? x.sec : x.val), 0);
     const legend = el('div', 'chart-legend heat-legend');
-    const scale = el('span', 'heat-scale', '<span>menos</span>');
+    const scale = el('span', 'heat-scale', '<span>' + tr('tracker.less', 'menos') + '</span>');
     for (let i = 0; i <= 4; i++) scale.append(el('i', 'heat-swatch l' + i));
-    scale.append(el('span', null, 'mais'));
+    scale.append(el('span', null, tr('tracker.more', 'mais')));
     legend.append(scale);
     legend.append(el('span', 'legend-spacer'));
-    legend.append(el('span', 'legend-stat', '<b>' + (isHours ? fmtHours(total) : total) + '</b> total'));
-    legend.append(el('span', 'legend-stat', '<b>' + (isHours ? fmtHours(peak) : peak) + '</b> pico'));
-    legend.append(el('span', 'legend-stat', '<b>' + active + '</b> dias'));
-    if (isHours && goalSec > 0) legend.append(el('span', 'legend-stat', '<b>' + fmtHours(goalSec) + '</b> meta'));
+    legend.append(el('span', 'legend-stat', '<b>' + (isHours ? fmtHours(total) : total) + '</b> ' + tr('tracker.statTotal', 'total')));
+    legend.append(el('span', 'legend-stat', '<b>' + (isHours ? fmtHours(peak) : peak) + '</b> ' + tr('tracker.statPeak', 'pico')));
+    legend.append(el('span', 'legend-stat', '<b>' + active + '</b> ' + tr('tracker.statDays', 'dias')));
+    if (isHours && goalSec > 0) legend.append(el('span', 'legend-stat', '<b>' + fmtHours(goalSec) + '</b> ' + tr('tracker.statGoal', 'meta')));
     return legend;
   },
 
@@ -804,7 +857,7 @@ const TrackerPage = {
     const size = clamp((circumference / n) * 0.7, 2.2, 9.5) * clamp(cell / 18, 0.74, 1.35);
     const angular = turns * Math.PI * 2;
 
-    let svg = '<svg class="ring-svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Heatmap circular">';
+    let svg = '<svg class="ring-svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + this.typeLabel('ring') + '">';
     days.forEach((day, i) => {
       const t = n === 1 ? 0 : i / (n - 1);
       const ang = -Math.PI / 2 + t * angular;
@@ -829,36 +882,41 @@ const TrackerPage = {
     const today = days.find(x => x.today) || days[days.length - 1];
     const todayVal = isHours ? today.sec : today.val;
     const pct = goalSec > 0 ? clamp(todayVal / goalSec, 0, 1) : clamp(todayVal / Math.max(axisMax, 1), 0, 1);
-    const fmtV = v => isHours ? fmtHours(v) : (v + (v === 1 ? ' foco' : ' focos'));
+    const fmtV = v => {
+      if (isHours) return fmtHours(v);
+      const rounded = Number.isInteger(v) ? v : Number(v.toFixed(1));
+      const unitLbl = rounded === 1 ? tr('tracker.focusOne', 'foco') : tr('tracker.focusMany', 'focos');
+      return rounded + ' ' + unitLbl;
+    };
 
     const wrap = el('div', 'ring-chart');
     wrap.innerHTML = svg +
       '<div class="ring-center">' +
         '<b>' + Math.round(pct * 100) + '%</b>' +
-        '<span>' + (goalSec > 0 ? 'da meta de hoje' : 'do maior dia') + '</span>' +
-        '<small>' + (isHours ? fmtHours(todayVal) : todayVal + ' hoje') + '</small>' +
+        '<span>' + (goalSec > 0 ? tr('tracker.ringOfToday', 'da meta de hoje') : tr('tracker.ringOfPeak', 'do maior dia')) + '</span>' +
+        '<small>' + tr('tracker.ringToday', (isHours ? fmtHours(todayVal) : todayVal) + ' hoje', { v: isHours ? fmtHours(todayVal) : todayVal }) + '</small>' +
       '</div>';
     chart.append(wrap);
 
     const info = el('div', 'ring-info');
     info.append(
-      el('div', 'habit-badge', '<span>total</span><b>' + fmtV(total) + '</b>'),
-      el('div', 'habit-badge', '<span>média</span><b>' + fmtV(avg) + '</b>'),
-      el('div', 'habit-badge', '<span>dias ativos</span><b>' + active + '</b>')
+      el('div', 'habit-badge', '<span>' + tr('tracker.statTotal', 'total') + '</span><b>' + fmtV(total) + '</b>'),
+      el('div', 'habit-badge', '<span>' + tr('tracker.ringAvg', 'média') + '</span><b>' + fmtV(avg) + '</b>'),
+      el('div', 'habit-badge', '<span>' + tr('tracker.ringActiveDays', 'dias ativos') + '</span><b>' + active + '</b>')
     );
     chart.append(info);
 
     const legend = el('div', 'chart-legend heat-legend ring-legend');
-    const scale = el('span', 'heat-scale', '<span>menos</span>');
+    const scale = el('span', 'heat-scale', '<span>' + tr('tracker.less', 'menos') + '</span>');
     for (let i = 0; i <= 4; i++) scale.append(el('i', 'heat-swatch l' + i));
-    scale.append(el('span', null, 'mais'));
+    scale.append(el('span', null, tr('tracker.more', 'mais')));
     legend.append(scale);
     chart.append(legend);
   },
 
   renderGoal(data) {
     data = data || this.chartDays();
-    const tr = Store.state.tracker;
+    const trState = Store.state.tracker;
     const goalSec = data.goalSec;
     const days = data.days;
     const total = days.reduce((s, x) => s + x.sec, 0);
@@ -867,7 +925,7 @@ const TrackerPage = {
     const isPastYear = data.year && data.year !== new Date().getFullYear();
     const refSec = isPastYear ? avg : entry.sec;
     const pct = goalSec > 0 ? clamp(refSec / goalSec, 0, 1) : 0;
-    const style = tr.goalStyle || 'bar';
+    const style = trState.goalStyle || 'bar';
 
     const card = $('#goal-card');
     if (!card) return;
@@ -876,11 +934,11 @@ const TrackerPage = {
     card.innerHTML = '';
     card.className = 'goal-card style-' + style;
 
-    const avgStr = 'média: ' + fmtHours(avg);
+    const avgStr = tr('tracker.goalAvg', 'média: ' + fmtHours(avg), { h: fmtHours(avg) });
     const todayStr = isPastYear
-      ? 'total: ' + fmtHours(total)
-      : 'hoje: ' + fmtHours(entry.sec) + (goalSec > 0 ? ' (' + Math.round(pct * 100) + '%)' : '');
-    const goalValStr = goalSec > 0 ? fmtHours(goalSec) + '/dia' : 'sem meta';
+      ? tr('tracker.goalTotal', 'total: ' + fmtHours(total), { h: fmtHours(total) })
+      : tr('tracker.goalToday', 'hoje: ' + fmtHours(entry.sec), { h: fmtHours(entry.sec) }) + (goalSec > 0 ? ' (' + Math.round(pct * 100) + '%)' : '');
+    const goalValStr = goalSec > 0 ? tr('tracker.goalPerDay', fmtHours(goalSec) + '/dia', { h: fmtHours(goalSec) }) : tr('tracker.goalNone', 'sem meta');
 
     if (style === 'ring') {
       const circ = 2 * Math.PI * 34;
@@ -898,7 +956,7 @@ const TrackerPage = {
           '</div>' +
           '<div class="goal-ring-info">' +
             '<div class="goal-head">' +
-              '<span class="goal-title">Meta diária</span>' +
+              '<span class="goal-title">' + tr('tracker.goalTitle', 'Meta diária') + '</span>' +
               '<b class="goal-value">' + goalValStr + '</b>' +
             '</div>' +
             '<p class="chart-goal"><span>' + avgStr + '</span><span class="goal-today">' + todayStr + '</span></p>' +
@@ -913,7 +971,7 @@ const TrackerPage = {
       ];
       card.innerHTML =
         '<div class="goal-head">' +
-          '<span class="goal-title">Meta diária (marcos)</span>' +
+          '<span class="goal-title">' + tr('tracker.goalTitleMilestones', 'Meta diária (marcos)') + '</span>' +
           '<b class="goal-value">' + goalValStr + '</b>' +
         '</div>' +
         '<div class="goal-milestones-track">' +
@@ -929,7 +987,7 @@ const TrackerPage = {
     } else {
       card.innerHTML =
         '<div class="goal-head">' +
-          '<span class="goal-title">Meta diária</span>' +
+          '<span class="goal-title">' + tr('tracker.goalTitle', 'Meta diária') + '</span>' +
           '<b class="goal-value">' + goalValStr + '</b>' +
         '</div>' +
         '<div class="goal-meter"><span class="goal-meter-fill" style="width:' + (pct * 100).toFixed(1) + '%"></span></div>' +
@@ -939,10 +997,12 @@ const TrackerPage = {
   },
 
   dayTitle(x, isHours = true) {
-    const fmt = new Intl.DateTimeFormat('pt-BR', { weekday: 'short', day: 'numeric', month: 'short' });
+    const loc = typeof appLocale === 'function' ? appLocale() : 'pt-BR';
+    const fmt = new Intl.DateTimeFormat(loc, { weekday: 'short', day: 'numeric', month: 'short' });
+    const futureLbl = tr('tracker.future', 'ainda por vir');
     const formatted = isHours
-      ? (x.sec ? fmtHours(x.sec) : (x.future ? 'ainda por vir' : 'sem uso'))
-      : (x.val ? (x.val + (x.val === 1 ? ' foco' : ' focos')) : (x.future ? 'ainda por vir' : 'sem foco'));
+      ? (x.sec ? fmtHours(x.sec) : (x.future ? futureLbl : tr('tracker.noUsage', 'sem uso')))
+      : (x.val ? (x.val + ' ' + (x.val === 1 ? tr('tracker.focusOne', 'foco') : tr('tracker.focusMany', 'focos'))) : (x.future ? futureLbl : tr('tracker.noFocus', 'sem foco')));
     return fmt.format(x.d) + ' · ' + formatted;
   },
 
@@ -963,9 +1023,9 @@ const TrackerPage = {
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1200);
-      toast('Dados exportados em JSON', 'download');
+      toast(tr('tracker.exportSuccess', 'Dados exportados em JSON'), 'download');
     } catch (e) {
-      toast('Não foi possível exportar os dados', 'close');
+      toast(tr('tracker.exportFail', 'Não foi possível exportar os dados'), 'close');
     }
   },
 
@@ -977,18 +1037,18 @@ const TrackerPage = {
       const valEl = $('.stat-value', hoursCard);
       const subEl = $('.stat-sub', hoursCard);
       if (valEl) valEl.textContent = fmtHours(Usage.totalSeconds());
-      if (subEl) subEl.textContent = 'hoje: ' + fmtHours(Usage.todaySeconds());
+      if (subEl) subEl.textContent = tr('tracker.sub.todayHours', 'hoje: ' + fmtHours(Usage.todaySeconds()), { h: fmtHours(Usage.todaySeconds()) });
     }
     const goalCard = $('#stats-grid .stat-card[data-stat-id="goal"]');
     if (goalCard) {
-      const tr = Store.state.tracker;
+      const trState = Store.state.tracker;
       const goalVal = $('.stat-value', goalCard);
       const goalSub = $('.stat-sub', goalCard);
-      const pct = tr.goal > 0 ? Math.round(clamp(Usage.todaySeconds() / (tr.goal * 3600), 0, 1) * 100) : 0;
+      const pct = trState.goal > 0 ? Math.round(clamp(Usage.todaySeconds() / (trState.goal * 3600), 0, 1) * 100) : 0;
       if (goalVal) goalVal.textContent = pct + '%';
-      if (goalSub) goalSub.textContent = tr.goal > 0
-        ? (fmtHours(Usage.todaySeconds()) + ' de ' + tr.goal + 'h')
-        : 'defina uma meta no painel';
+      if (goalSub) goalSub.textContent = trState.goal > 0
+        ? tr('tracker.sub.goalOf', fmtHours(Usage.todaySeconds()) + ' de ' + trState.goal + 'h', { h: fmtHours(Usage.todaySeconds()), g: trState.goal })
+        : tr('tracker.sub.noGoalSet', 'defina uma meta no painel');
     }
 
     const data = this.chartDays();

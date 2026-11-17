@@ -2,6 +2,9 @@
 /* ============ main.js — inicialização ============ */
 async function boot() {
   Store.load();
+  if (typeof I18n !== 'undefined' && typeof I18n.applyStaticDOM === 'function') {
+    I18n.applyStaticDOM();
+  }
 
   // respeita a preferência do sistema por menos movimento
   if (Store.fresh && window.matchMedia &&
@@ -58,7 +61,10 @@ async function boot() {
   if (!Store.state.meta.seenTip) {
     Store.state.meta.seenTip = true;
     Store.save();
-    setTimeout(() => toast('Toque na bolinha para navegar, arraste para movê-la e personalizar tudo', 'sparkle'), 1400);
+    const tip = typeof getLang === 'function' && getLang() === 'en'
+      ? 'Tap the bubble to navigate, drag to move it and customize everything'
+      : 'Toque na bolinha para navegar, arraste para movê-la e personalizar tudo';
+    setTimeout(() => toast(tip, 'sparkle'), 1400);
   }
 }
 

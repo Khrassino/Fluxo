@@ -88,6 +88,130 @@ function wsValidTint(tint) {
   return WS_CARD_TINTS.some(t => t.id === s) ? s : '';
 }
 
+const WS_BG_PATTERNS = ['dots', 'lines', 'grid', 'cross', 'none'];
+
+function wsNormalizeBgPattern(val) {
+  const s = String(val || 'dots');
+  return WS_BG_PATTERNS.includes(s) ? s : 'dots';
+}
+
+const WS_ARROW_CAPS = ['auto', 'none', 'arrow', 'circle', 'circle-open', 'square', 'square-open', 'diamond', 'bar'];
+
+function wsNormalizeArrowCap(val) {
+  const s = String(val || 'auto');
+  return WS_ARROW_CAPS.includes(s) ? s : 'auto';
+}
+
+function wsArrowDefaultCaps(kind, dir) {
+  let startCap = 'none';
+  let endCap = 'arrow';
+  if (kind === 'supports') {
+    startCap = 'circle';
+    endCap = 'arrow';
+  } else if (kind === 'contrast') {
+    startCap = 'bar';
+    endCap = 'bar';
+  } else if (kind === 'sequence') {
+    startCap = 'circle-open';
+    endCap = 'arrow';
+  } else {
+    startCap = 'circle-open';
+    endCap = 'arrow';
+  }
+
+  if (dir === 'none') {
+    if (kind === 'supports') return { startCap: 'circle', endCap: 'square-open' };
+    if (kind === 'contrast') return { startCap: 'bar', endCap: 'bar' };
+    if (kind === 'sequence') return { startCap: 'circle', endCap: 'circle' };
+    return { startCap: 'none', endCap: 'none' };
+  }
+  if (dir === 'both') {
+    if (kind === 'supports') return { startCap: 'diamond', endCap: 'diamond' };
+    if (kind === 'contrast') return { startCap: 'bar', endCap: 'bar' };
+    return { startCap: 'arrow', endCap: 'arrow' };
+  }
+  return { startCap, endCap };
+}
+
+function wsResolveArrowCaps(arrow) {
+  const kind = (arrow && arrow.kind) || 'relates';
+  const dir = (arrow && arrow.dir) || 'forward';
+  const defs = wsArrowDefaultCaps(kind, dir);
+  const startCap = arrow && arrow.startCap && arrow.startCap !== 'auto'
+    ? wsNormalizeArrowCap(arrow.startCap)
+    : defs.startCap;
+  const endCap = arrow && arrow.endCap && arrow.endCap !== 'auto'
+    ? wsNormalizeArrowCap(arrow.endCap)
+    : defs.endCap;
+  return { startCap, endCap };
+}
+
+function wsArrowCurveGeometry(p1, p2, fc, tc, laneOffset) {
+  const x1 = Number(p1 && p1.x) || 0;
+  const y1 = Number(p1 && p1.y) || 0;
+  const x2 = Number(p2 && p2.x) || 0;
+  const y2 = Number(p2 && p2.y) || 0;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const dist = Math.hypot(dx, dy) || 1;
+  const nx = -dy / dist;
+  const ny = dx / dist;
+  const lane = Number(laneOffset) || 0;
+
+  // Deslocamento lateral suave apenas para separar ligações paralelas + flexão natural
+  const sx1 = x1 + nx * lane * 0.45;
+  const sy1 = y1 + ny * lane * 0.45;
+  const sx2 = x2 + nx * lane * 0.45;
+  const sy2 = y2 + ny * lane * 0.45;
+
+  let c1x, c1y, c2x, c2y;
+  const bend = clampNum(dist * 0.38, 36, 175);
+  const fcx = fc ? Number(fc.x) || x1 : x1;
+  const fcy = fc ? Number(fc.y) || y1 : y1;
+  const tcx = tc ? Number(tc.x) || x2 : x2;
+  const tcy = tc ? Number(tc.y) || y2 : y2;
+
+  const outX = x1 - fcx;
+  const outY = y1 - fcy;
+  const inX = x2 - tcx;
+  const inY = y2 - tcy;
+
+  if (Math.hypot(outX, outY) > 1 && Math.hypot(inX, inY) > 1) {
+    const outLen = Math.hypot(outX, outY) || 1;
+    const inLen = Math.hypot(inX, inY) || 1;
+    const ux1 = outX / outLen;
+    const uy1 = outY / outLen;
+    const ux2 = inX / inLen;
+    const uy2 = inY / inLen;
+    // Curva orgânica influenciada pela saída dos cartões e pela pista paralela
+    c1x = sx1 + ux1 * bend + nx * lane * 0.85;
+    c1y = sy1 + uy1 * bend + ny * lane * 0.85;
+    c2x = sx2 + ux2 * bend + nx * lane * 0.85;
+    c2y = sy2 + uy2 * bend + ny * lane * 0.85;
+  } else {
+    const bow = lane !== 0 ? lane * 1.15 : clampNum(dist * 0.14, 14, 48);
+    c1x = sx1 + dx * 0.32 + nx * bow;
+    c1y = sy1 + dy * 0.32 + ny * bow;
+    c2x = sx2 - dx * 0.32 + nx * bow;
+    c2y = sy2 - dy * 0.32 + ny * bow;
+  }
+
+  const d = 'M' + sx1.toFixed(1) + ' ' + sy1.toFixed(1) +
+    ' C' + c1x.toFixed(1) + ' ' + c1y.toFixed(1) + ', ' +
+    c2x.toFixed(1) + ' ' + c2y.toFixed(1) + ', ' +
+    sx2.toFixed(1) + ' ' + sy2.toFixed(1);
+
+  // Ponto médio real da cúbica (t = 0.5)
+  const mx = 0.125 * sx1 + 0.375 * c1x + 0.375 * c2x + 0.125 * sx2;
+  const my = 0.125 * sy1 + 0.375 * c1y + 0.375 * c2y + 0.125 * sy2;
+
+  return { d, mx, my, x1: sx1, y1: sy1, x2: sx2, y2: sy2, c1x, c1y, c2x, c2y };
+}
+
+function clampNum(v, a, b) {
+  return Math.min(b, Math.max(a, v));
+}
+
 function wsNormalizeArrow(raw, genId) {
   if (!raw || !raw.from || !raw.to || raw.from === raw.to) return null;
   const makeId = typeof genId === 'function' ? genId : (() => Math.random().toString(36).slice(2, 9));
@@ -95,6 +219,8 @@ function wsNormalizeArrow(raw, genId) {
   const dir = WS_ARROW_DIRS.some(d => d.id === raw.dir) ? raw.dir : 'forward';
   const color = /^#[0-9a-f]{3,8}$/i.test(String(raw.color || '')) ? String(raw.color) : '';
   const label = String(raw.label == null ? '' : raw.label).replace(/\s+/g, ' ').trim().slice(0, 48);
+  const startCap = wsNormalizeArrowCap(raw.startCap);
+  const endCap = wsNormalizeArrowCap(raw.endCap);
   return {
     id: String(raw.id || makeId()),
     from: String(raw.from),
@@ -102,42 +228,50 @@ function wsNormalizeArrow(raw, genId) {
     kind,
     dir,
     label,
-    color
+    color,
+    startCap,
+    endCap
   };
 }
 
 function wsArrowKindMeta(kind) {
-  return WS_ARROW_KINDS.find(k => k.id === kind) || WS_ARROW_KINDS[0];
+  const base = WS_ARROW_KINDS.find(k => k.id === kind) || WS_ARROW_KINDS[0];
+  if (typeof t === 'function') {
+    return Object.assign({}, base, { label: t('ws.arrow.' + base.id, null, base.label) });
+  }
+  return base;
 }
 
 function wsCardTypeLabel(type) {
+  const trFn = typeof t === 'function' ? t : null;
   switch (type) {
-    case 'concept': return 'Conceito';
-    case 'checklist': return 'Checklist';
-    case 'group': return 'Grupo';
-    case 'pdf': return 'PDF';
-    case 'image': return 'Imagem';
-    default: return 'Nota';
+    case 'concept': return trFn ? trFn('ws.card.concept', null, 'Conceito') : 'Conceito';
+    case 'checklist': return trFn ? trFn('ws.card.checklist', null, 'Checklist') : 'Checklist';
+    case 'group': return trFn ? trFn('ws.card.group', null, 'Quadro') : 'Quadro';
+    case 'pdf': return trFn ? trFn('ws.card.pdf', null, 'PDF') : 'PDF';
+    case 'image': return trFn ? trFn('ws.card.image', null, 'Imagem') : 'Imagem';
+    default: return trFn ? trFn('ws.card.note', null, 'Nota') : 'Nota';
   }
 }
 
 function wsCardDisplayTitle(card, board) {
-  if (!card) return 'Cartão';
+  const trFn = typeof t === 'function' ? t : null;
+  if (!card) return trFn ? trFn('ws.card.generic', null, 'Cartão') : 'Cartão';
   if (card.type === 'pdf') {
     const meta = board && Array.isArray(board.pdfs) ? board.pdfs.find(p => p && p.id === card.pdfId) : null;
-    return (meta && meta.name) || 'PDF';
+    return (meta && meta.name) || (trFn ? trFn('ws.card.pdf', null, 'PDF') : 'PDF');
   }
   if (card.type === 'image') {
     const meta = board && Array.isArray(board.images) ? board.images.find(im => im && im.id === card.imgId) : null;
-    return (meta && meta.name) || 'Imagem';
+    return (meta && meta.name) || (trFn ? trFn('ws.card.image', null, 'Imagem') : 'Imagem');
   }
   if (card.type === 'concept' || card.type === 'checklist' || card.type === 'group') {
-    const t = String(card.title || '').trim();
-    if (t) return t;
+    const ttl = String(card.title || '').trim();
+    if (ttl) return ttl;
     return wsCardTypeLabel(card.type);
   }
   const firstLine = String(card.text || '').split('\n').map(l => l.trim()).find(Boolean);
-  return firstLine ? firstLine.slice(0, 48) : 'Nota sem texto';
+  return firstLine ? firstLine.slice(0, 48) : (trFn ? trFn('ws.card.noteEmpty', null, 'Nota sem texto') : 'Nota sem texto');
 }
 
 function wsGetCardConnections(board, cardId) {
@@ -305,14 +439,14 @@ function wsSearchBoard(board, query, opts) {
         if (!normQ || wsNormalizeText(title).includes(normQ)) {
           results.push({
             kind: 'card', cardId: c.id, cardType: c.type, title,
-            meta: 'Quadro agrupador',
+            meta: typeof t === 'function' ? t('ws.card.groupMeta', null, 'Quadro agrupador') : 'Quadro agrupador',
             snippet: '',
             score: normQ ? 88 : 11
           });
         }
       } else if (c.type === 'image') {
         const im = imgMap.get(c.imgId);
-        const name = (im && im.name) || 'Imagem';
+        const name = (im && im.name) || (typeof t === 'function' ? t('ws.card.image', null, 'Imagem') : 'Imagem');
         if (!normQ || wsNormalizeText(name).includes(normQ)) {
           results.push({
             kind: 'card', cardId: c.id, cardType: c.type, title: name,
@@ -325,11 +459,12 @@ function wsSearchBoard(board, query, opts) {
         const pdfName = (meta && meta.name) || 'PDF';
         const pages = (meta && meta.pages) || 0;
         const highlights = (meta && Array.isArray(meta.highlights)) ? meta.highlights : [];
+        const pagesMeta = pages ? (' · ' + (typeof t === 'function' ? t('ws.card.pdfPages', { n: pages }, pages + ' pág.') : (pages + ' pág.'))) : '';
         if (!normQ) {
           results.push({
             kind: 'pdf', cardId: c.id, cardType: 'pdf', title: pdfName,
-            meta: 'PDF' + (pages ? ' · ' + pages + ' pág.' : ''),
-            snippet: highlights.length ? (highlights.length + ' destaque(s)') : '',
+            meta: 'PDF' + pagesMeta,
+            snippet: highlights.length ? (typeof t === 'function' ? t('ws.card.pdfHighlights', { n: highlights.length }, highlights.length + ' destaque(s)') : (highlights.length + ' destaque(s)')) : '',
             score: 15
           });
           return;
@@ -339,8 +474,8 @@ function wsSearchBoard(board, query, opts) {
           matched = true;
           results.push({
             kind: 'pdf', cardId: c.id, cardType: 'pdf', title: pdfName,
-            meta: 'PDF' + (pages ? ' · ' + pages + ' pág.' : ''),
-            snippet: 'Documento PDF',
+            meta: 'PDF' + pagesMeta,
+            snippet: typeof t === 'function' ? t('ws.card.pdfDoc', null, 'Documento PDF') : 'Documento PDF',
             score: 86
           });
         }
@@ -353,7 +488,7 @@ function wsSearchBoard(board, query, opts) {
               cardType: 'pdf',
               page: h.page,
               title: pdfName,
-              meta: 'Destaque · p. ' + h.page,
+              meta: typeof t === 'function' ? t('ws.card.hlMeta', { page: h.page }, 'Destaque · p. ' + h.page) : ('Destaque · p. ' + h.page),
               snippet: wsExtractSnippet(h.text, normQ),
               score: 78
             });
@@ -385,7 +520,7 @@ function wsSearchBoard(board, query, opts) {
           arrowId: a.id,
           cardId: a.from,
           title: a.label ? a.label : (kindLabel + ': ' + fullLabel),
-          meta: 'Ligação · ' + kindLabel,
+          meta: typeof t === 'function' ? t('ws.card.linkMeta', { kind: kindLabel }, 'Ligação · ' + kindLabel) : ('Ligação · ' + kindLabel),
           snippet: fullLabel,
           score: a.label && wsNormalizeText(a.label).includes(normQ) ? 84 : (normQ ? 58 : 8)
         });
@@ -777,6 +912,175 @@ function wsComputeSnap(movingBox, otherBoxes, opts) {
   };
 }
 
+function wsComputeResizeSnap(box, otherBoxes, opts) {
+  opts = opts || {};
+  const gridSize = Math.max(8, Number(opts.gridSize) || WS_SNAP_GRID);
+  const minW = Math.max(40, Number(opts.minW) || 170);
+  const minH = Math.max(40, Number(opts.minH) || 100);
+  const snapDist = Number(opts.snapDist != null ? opts.snapDist : 8);
+  const elemSnapDist = Number(opts.elemSnapDist != null ? opts.elemSnapDist : 12);
+  const pullDist = Number(opts.pullDist != null ? opts.pullDist : 28);
+  const revealDist = Number(opts.revealDist != null ? opts.revealDist : 54);
+  const nearRadius = Number(opts.nearRadius != null ? opts.nearRadius : 240);
+  const guideMaxGap = Number(opts.guideMaxGap != null ? opts.guideMaxGap : 180);
+
+  const rx = Number(box && box.x) || 0;
+  const ry = Number(box && box.y) || 0;
+  const rawW = Math.max(minW, Number(box && box.w) || minW);
+  const rawH = Math.max(minH, Number(box && box.h) || minH);
+  const rawRight = rx + rawW;
+  const rawBottom = ry + rawH;
+  const others = Array.isArray(otherBoxes) ? otherBoxes : [];
+
+  let nearestBoxDist = Infinity;
+  const enrichedOthers = [];
+  for (let i = 0; i < others.length; i++) {
+    const o = others[i];
+    if (!o) continue;
+    const ox = Number(o.x) || 0;
+    const oy = Number(o.y) || 0;
+    const ow = Math.max(1, Number(o.w) || 1);
+    const oh = Math.max(1, Number(o.h) || 1);
+    const gapX = Math.max(0, ox - rawRight, rx - (ox + ow));
+    const gapY = Math.max(0, oy - rawBottom, ry - (oy + oh));
+    const boxDist = Math.hypot(gapX, gapY);
+    if (boxDist < nearestBoxDist) nearestBoxDist = boxDist;
+    enrichedOthers.push({ x: ox, y: oy, w: ow, h: oh, gapX, gapY, boxDist });
+  }
+
+  let proximity = 0;
+  if (nearestBoxDist < nearRadius) {
+    const pt = Math.max(0, Math.min(1, 1 - nearestBoxDist / nearRadius));
+    proximity = pt * pt * (3 - 2 * pt);
+  }
+
+  const evalEdge = (edgeVal, minEdge, origin, axis) => {
+    const minGrid = Math.ceil(minEdge / gridSize) * gridSize;
+    const gridTarget = Math.max(minGrid, Math.round(edgeVal / gridSize) * gridSize);
+    const gridDist = Math.abs(edgeVal - gridTarget);
+    let bestElem = null;
+
+    for (let i = 0; i < enrichedOthers.length; i++) {
+      const o = enrichedOthers[i];
+      if (o.boxDist > nearRadius) continue;
+      const crossGap = axis === 'x' ? o.gapY : o.gapX;
+      if (crossGap > guideMaxGap) continue;
+
+      const ox = o.x;
+      const oy = o.y;
+      const ow = o.w;
+      const oh = o.h;
+      const pos = axis === 'x' ? ox : oy;
+      const len = axis === 'x' ? ow : oh;
+      const crossStart = axis === 'x' ? Math.min(ry, oy) : Math.min(rx, ox);
+      const crossEnd = axis === 'x' ? Math.max(rawBottom, oy + oh) : Math.max(rawRight, ox + ow);
+      const crossProx = Math.max(0, Math.min(1, 1 - crossGap / guideMaxGap));
+
+      const cands = [
+        { val: pos + len, guide: pos + len },
+        { val: origin + len, guide: pos + len },
+        { val: pos, guide: pos }
+      ];
+      for (let j = 0; j < cands.length; j++) {
+        if (cands[j].val < minEdge) continue;
+        const dist = Math.abs(edgeVal - cands[j].val);
+        if (dist <= revealDist && (!bestElem || dist < bestElem.dist)) {
+          bestElem = {
+            target: cands[j].val,
+            guide: cands[j].guide,
+            dist,
+            min: crossStart - 10,
+            max: crossEnd + 10,
+            crossProx
+          };
+        }
+      }
+    }
+
+    let chosenTarget = gridTarget;
+    let chosenDist = gridDist;
+    let threshold = snapDist;
+    let guide = null;
+    let source = 'grid';
+
+    if (bestElem && (bestElem.dist <= elemSnapDist || bestElem.dist <= gridDist + 2)) {
+      chosenTarget = bestElem.target;
+      chosenDist = bestElem.dist;
+      threshold = elemSnapDist;
+      guide = {
+        pos: bestElem.guide,
+        min: bestElem.min,
+        max: bestElem.max,
+        crossProx: bestElem.crossProx
+      };
+      source = 'element';
+    }
+
+    let out = edgeVal;
+    let snapped = false;
+    let strength = 0;
+    if (chosenDist <= threshold) {
+      out = chosenTarget;
+      snapped = true;
+      strength = 1;
+    } else if (chosenDist <= pullDist) {
+      const t = (pullDist - chosenDist) / Math.max(1, pullDist - threshold);
+      const pull = 0.28 * t * t;
+      out = edgeVal + (chosenTarget - edgeVal) * pull;
+      strength = 0.3 + 0.65 * t;
+    } else if (chosenDist <= revealDist) {
+      const t = (revealDist - chosenDist) / Math.max(1, revealDist - pullDist);
+      strength = 0.3 * t;
+    }
+
+    if (guide) guide.strength = strength * (0.28 + 0.72 * guide.crossProx);
+
+    return {
+      val: Math.max(minEdge, out),
+      target: chosenTarget,
+      snapped,
+      strength,
+      source,
+      guide
+    };
+  };
+
+  const ax = evalEdge(rawRight, rx + minW, rx, 'x');
+  const ay = evalEdge(rawBottom, ry + minH, ry, 'y');
+  const finalW = Math.round(Math.max(minW, ax.val - rx));
+  const finalH = Math.round(Math.max(minH, ay.val - ry));
+  const targetW = Math.round(Math.max(minW, ax.target - rx));
+  const targetH = Math.round(Math.max(minH, ay.target - ry));
+  const radialDist = Math.hypot(rawRight - ax.target, rawBottom - ay.target);
+  const radialNear = Math.max(0, Math.min(1, 1 - radialDist / (revealDist * 1.15)));
+  const moldStrength = Math.max(radialNear * radialNear, (ax.strength + ay.strength) * 0.5);
+  const gridOpacity = 0.38 + 0.62 * proximity;
+  const locked = !!((ax.snapped && ay.snapped) || (ax.snapped && ax.source === 'element') || (ay.snapped && ay.source === 'element'));
+
+  return {
+    x: rx,
+    y: ry,
+    w: finalW,
+    h: finalH,
+    targetX: rx,
+    targetY: ry,
+    targetW,
+    targetH,
+    snappedX: ax.snapped,
+    snappedY: ay.snapped,
+    locked,
+    strengthX: ax.strength,
+    strengthY: ay.strength,
+    proximity,
+    nearestDist: nearestBoxDist,
+    gridOpacity,
+    moldStrength,
+    near: (ax.snapped && ay.snapped) || moldStrength > 0.58,
+    guideX: ax.guide ? Object.assign({ snapped: ax.snapped }, ax.guide) : null,
+    guideY: ay.guide ? Object.assign({ snapped: ay.snapped }, ay.guide) : null
+  };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     WS_CARD_TYPES,
@@ -784,6 +1088,8 @@ if (typeof module !== 'undefined' && module.exports) {
     WS_ARROW_KINDS,
     WS_ARROW_DIRS,
     WS_ARROW_COLORS,
+    WS_ARROW_CAPS,
+    WS_BG_PATTERNS,
     WS_SNAP_GRID,
     WS_NOTE_FONTS,
     WS_NOTE_SIZES,
@@ -794,6 +1100,11 @@ if (typeof module !== 'undefined' && module.exports) {
     wsFormatTagsLine,
     wsNormalizeChecklistItems,
     wsValidTint,
+    wsNormalizeBgPattern,
+    wsNormalizeArrowCap,
+    wsArrowDefaultCaps,
+    wsResolveArrowCaps,
+    wsArrowCurveGeometry,
     wsNormalizeArrow,
     wsArrowKindMeta,
     wsCardTypeLabel,
@@ -815,6 +1126,7 @@ if (typeof module !== 'undefined' && module.exports) {
     wsSanitizeNoteHtml,
     wsNoteHtmlToPlainText,
     wsShouldWheelScrollNote,
-    wsComputeSnap
+    wsComputeSnap,
+    wsComputeResizeSnap
   };
 }

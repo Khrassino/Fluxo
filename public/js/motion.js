@@ -17,6 +17,18 @@ const PARTICLE_STYLES = [
   { id: 'keys',  label: 'Teclas' }
 ];
 
+function getMotionModeLabel(id) {
+  const item = MOTION_MODES.find(x => x.id === id);
+  const fb = item ? item.label : id;
+  return typeof t === 'function' ? t('motion.' + id, null, fb) : fb;
+}
+
+function getParticleStyleLabel(id) {
+  const item = PARTICLE_STYLES.find(x => x.id === id);
+  const fb = item ? item.label : id;
+  return typeof t === 'function' ? t('particle.' + id, null, fb) : fb;
+}
+
 const AMBIENT_KEY_POOL = ['⌘', 'A', 'S', 'D', 'F', 'K', '↵', '⇧', 'E', 'R', '⌥', '·'];
 
 function formatKeycapLabel(key) {

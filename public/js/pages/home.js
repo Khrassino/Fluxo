@@ -89,14 +89,15 @@ const HomePage = {
   clockTick() {
     const d = new Date();
     const h = d.getHours();
-    let greet = 'Boa noite';
-    if (h < 5) greet = 'Boa madrugada';
-    else if (h < 12) greet = 'Bom dia';
-    else if (h < 18) greet = 'Boa tarde';
+    let greet = tr('home.greet.night', 'Boa noite');
+    if (h < 5) greet = tr('home.greet.late', 'Boa madrugada');
+    else if (h < 12) greet = tr('home.greet.morning', 'Bom dia');
+    else if (h < 18) greet = tr('home.greet.afternoon', 'Boa tarde');
     $('#home-greet').textContent = greet;
     $('#home-clock').textContent =
       String(h).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
-    $('#home-date').textContent = new Intl.DateTimeFormat('pt-BR', {
+    const loc = typeof appLocale === 'function' ? appLocale() : 'pt-BR';
+    $('#home-date').textContent = new Intl.DateTimeFormat(loc, {
       weekday: 'long', day: 'numeric', month: 'long'
     }).format(d);
   },
@@ -117,8 +118,9 @@ const HomePage = {
       let chip = null;
       switch (item.id) {
         case 'focus': {
+          const mins = t.durations.focus || 25;
           chip = el('button', 'home-chip home-chip-focus', svgIcon('play') + '<span></span>');
-          chip.lastChild.textContent = 'iniciar foco · ' + (t.durations.focus || 25) + 'min';
+          chip.lastChild.textContent = tr('home.chip.startFocus', 'iniciar foco · ' + mins + 'min', { m: mins });
           chip.addEventListener('click', () => {
             if (typeof TimerPage !== 'undefined') TimerPage.quickFocus();
           });
@@ -126,22 +128,33 @@ const HomePage = {
         }
         case 'summary': {
           chip = el('button', 'home-chip', svgIcon('clock') + '<span></span>');
-          chip.lastChild.textContent = fmtHours(todaySec) + ' hoje' +
-            (focusToday ? ' · ' + focusToday + (focusToday === 1 ? ' foco' : ' focos') : '');
+          const todayTxt = tr('home.chip.today', fmtHours(todaySec) + ' hoje', { h: fmtHours(todaySec) });
+          const focusTxt = focusToday
+            ? ' · ' + (focusToday === 1
+              ? tr('home.chip.focusOne', '1 foco')
+              : tr('home.chip.focusMany', focusToday + ' focos', { n: focusToday }))
+            : '';
+          chip.lastChild.textContent = todayTxt + focusTxt;
           chip.addEventListener('click', () => { location.hash = '#/progresso'; });
           break;
         }
         case 'tasks': {
           chip = el('button', 'home-chip', svgIcon('tasks') + '<span></span>');
-          chip.lastChild.textContent = pending === 0 ? 'nenhuma tarefa pendente' : (pending + (pending === 1 ? ' tarefa pendente' : ' tarefas pendentes'));
+          chip.lastChild.textContent = pending === 0
+            ? tr('home.chip.tasksNone', 'nenhuma tarefa pendente')
+            : (pending === 1
+              ? tr('home.chip.tasksOne', '1 tarefa pendente')
+              : tr('home.chip.tasksMany', pending + ' tarefas pendentes', { n: pending }));
           chip.addEventListener('click', () => { location.hash = '#/tarefas'; });
           break;
         }
         case 'streak': {
           chip = el('button', 'home-chip', svgIcon('flame') + '<span></span>');
           chip.lastChild.textContent = streak > 0
-            ? (streak + (streak === 1 ? ' dia seguido' : ' dias seguidos'))
-            : 'iniciar sequência';
+            ? (streak === 1
+              ? tr('home.chip.streakOne', '1 dia seguido')
+              : tr('home.chip.streakMany', streak + ' dias seguidos', { n: streak }))
+            : tr('home.chip.streakZero', 'iniciar sequência');
           chip.addEventListener('click', () => { location.hash = '#/progresso'; });
           break;
         }
@@ -156,7 +169,7 @@ const HomePage = {
         }
         case 'stopwatch': {
           chip = el('button', 'home-chip', svgIcon('timer') + '<span></span>');
-          chip.lastChild.textContent = 'cronômetro';
+          chip.lastChild.textContent = tr('home.chip.stopwatch', 'cronômetro');
           chip.addEventListener('click', () => {
             if (typeof TimerPage !== 'undefined') TimerPage.setTab('stopwatch');
             location.hash = '#/cronometro';
@@ -165,7 +178,7 @@ const HomePage = {
         }
         case 'newTask': {
           chip = el('button', 'home-chip', svgIcon('plus') + '<span></span>');
-          chip.lastChild.textContent = 'nova tarefa';
+          chip.lastChild.textContent = tr('home.chip.newTask', 'nova tarefa');
           chip.addEventListener('click', () => {
             location.hash = '#/tarefas';
             setTimeout(() => { const inp = $('#tasks-input'); if (inp) inp.focus(); }, 260);
@@ -174,13 +187,13 @@ const HomePage = {
         }
         case 'tracker': {
           chip = el('button', 'home-chip', svgIcon('chart') + '<span></span>');
-          chip.lastChild.textContent = 'ver progresso';
+          chip.lastChild.textContent = tr('home.chip.tracker', 'ver progresso');
           chip.addEventListener('click', () => { location.hash = '#/progresso'; });
           break;
         }
         case 'panel': {
           chip = el('button', 'home-chip', svgIcon('sliders') + '<span></span>');
-          chip.lastChild.textContent = 'personalizar';
+          chip.lastChild.textContent = tr('home.chip.panel', 'personalizar');
           chip.addEventListener('click', () => { Panel.open(); });
           break;
         }
@@ -200,10 +213,12 @@ const HomePage = {
     if (!label || !toggle) return;
     const track = Store.state.music.track;
     if (track === 'none') {
-      label.textContent = 'música de fundo';
+      label.textContent = tr('home.chip.musicOff', 'música de fundo');
       toggle.innerHTML = svgIcon('play');
     } else {
-      label.textContent = TRACK_LABELS[track] || 'música';
+      label.textContent = typeof getTrackLabel === 'function'
+        ? getTrackLabel(track)
+        : (TRACK_LABELS[track] || tr('home.chip.musicFallback', 'música'));
       toggle.innerHTML = Sound.playing ? svgIcon('pause') : svgIcon('play');
     }
   }

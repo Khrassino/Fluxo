@@ -23,14 +23,49 @@ const Router = {
     return Object.keys(this.slugs).find(s => this.slugs[s] === route) || 'inicio';
   },
 
+  routeLabel(route) {
+    const def = this.labels[route] || route;
+    return tr('nav.' + route, def);
+  },
+
+  dockToggleTitle(open) {
+    if (open) {
+      return typeof getLang === 'function' && getLang() === 'en' ? 'Collapse navigation' : 'Recolher navegação';
+    }
+    const base = tr('nav.openMenu', 'Abrir navegação');
+    const dragHint = typeof getLang === 'function' && getLang() === 'en' ? 'drag to move' : 'arraste para mover';
+    return base + ' · ' + dragHint;
+  },
+
+  syncLanguage() {
+    const toggle = $('#dock-toggle');
+    if (toggle) {
+      const title = this.dockToggleTitle(this.dockOpen);
+      toggle.title = title;
+      toggle.setAttribute('aria-label', this.dockOpen ? title : tr('nav.openMenu', 'Abrir navegação'));
+    }
+    $$('#dock .dock-btn[data-route]').forEach(b => {
+      const lbl = this.routeLabel(b.dataset.route);
+      b.title = lbl;
+      b.setAttribute('aria-label', lbl);
+    });
+    const gear = $('#dock-settings');
+    if (gear) {
+      const lbl = tr('nav.customize', 'Personalizar');
+      gear.title = lbl;
+      gear.setAttribute('aria-label', lbl);
+    }
+    document.title = tr('title.' + this.route, this.route === 'home' ? 'Fluxo' : (this.routeLabel(this.route) + ' · Fluxo'));
+  },
+
   init() {
     const dock = $('#dock');
 
     /* bolinha que expande a navegação */
     const toggle = el('button', 'dock-toggle', svgIcon('logo'));
     toggle.id = 'dock-toggle';
-    toggle.title = 'Abrir navegação · arraste para mover';
-    toggle.setAttribute('aria-label', 'Abrir navegação');
+    toggle.title = this.dockToggleTitle(false);
+    toggle.setAttribute('aria-label', tr('nav.openMenu', 'Abrir navegação'));
     toggle.setAttribute('aria-expanded', 'false');
     toggle.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -45,16 +80,18 @@ const Router = {
     this.routes.forEach(r => {
       const b = el('button', 'dock-btn', svgIcon(this.icons[r]));
       b.dataset.route = r;
-      b.title = this.labels[r];
-      b.setAttribute('aria-label', this.labels[r]);
+      const lbl = this.routeLabel(r);
+      b.title = lbl;
+      b.setAttribute('aria-label', lbl);
       b.addEventListener('click', () => { location.hash = '#/' + this.slugFor(r); });
       items.append(b);
     });
     items.append(el('div', 'dock-sep'));
     const gear = el('button', 'dock-btn', svgIcon('sliders'));
     gear.id = 'dock-settings';
-    gear.title = 'Personalizar';
-    gear.setAttribute('aria-label', 'Personalizar');
+    const gearLbl = tr('nav.customize', 'Personalizar');
+    gear.title = gearLbl;
+    gear.setAttribute('aria-label', gearLbl);
     gear.addEventListener('click', () => Panel.toggle());
     items.append(gear);
     dock.append(items);
@@ -177,7 +214,7 @@ const Router = {
     dock.classList.add('dragging');
     document.body.classList.add('dock-dragging');
     toggle.setAttribute('aria-expanded', 'false');
-    toggle.title = 'Abrir navegação · arraste para mover';
+    toggle.title = this.dockToggleTitle(false);
     toggle.setAttribute('aria-label', toggle.title);
 
     const size = 62;
@@ -415,7 +452,7 @@ const Router = {
     const toggle = $('#dock-toggle');
     if (toggle) {
       toggle.setAttribute('aria-expanded', this.dockOpen ? 'true' : 'false');
-      toggle.title = this.dockOpen ? 'Recolher navegação' : 'Abrir navegação · arraste para mover';
+      toggle.title = this.dockToggleTitle(this.dockOpen);
       toggle.setAttribute('aria-label', toggle.title);
     }
     clearTimeout(this.dockTimer);
@@ -456,6 +493,6 @@ const Router = {
     if (typeof Motion !== 'undefined') Motion.setSuspended(next === 'workspace');
 
     if (changed && document.body.classList.contains('panel-open')) Panel.render();
-    document.title = (next === 'home' ? 'Fluxo' : this.labels[next] + ' · Fluxo');
+    document.title = tr('title.' + next, next === 'home' ? 'Fluxo' : this.routeLabel(next) + ' · Fluxo');
   }
 };

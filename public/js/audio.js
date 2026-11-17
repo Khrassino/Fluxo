@@ -62,10 +62,18 @@ const TRACK_LABELS = {
   pad: 'Ambiente',
   fireplace: 'Lareira',
   night: 'Noite calma',
-  typing: 'Teclado',
+  typing: 'Toques',
+  keys: 'Teclas',
   writing: 'Escrita',
   custom: 'Sua música'
 };
+
+function getTrackLabel(id) {
+  const key = id || 'none';
+  const fallback = TRACK_LABELS[key] || key;
+  if (typeof t === 'function') return t('track.' + key, null, fallback);
+  return fallback;
+}
 
 /* Curva perceptual suave: evita que 35%-50% soe agressivo e limita o teto */
 function audioGainCurve(vol) {
@@ -87,6 +95,7 @@ const Sound = {
   master: null,
   compressor: null,
   warmBus: null,
+  presenceBus: null,
   bgm: null,
   customSrc: null,
   nodes: [],
@@ -131,18 +140,24 @@ const Sound = {
       this.master.gain.value = audioGainCurve(Store.state.music.volume);
 
       this.compressor = this.ctx.createDynamicsCompressor();
-      this.compressor.threshold.value = -24;
+      this.compressor.threshold.value = -18;
       this.compressor.knee.value = 18;
-      this.compressor.ratio.value = 4;
-      this.compressor.attack.value = 0.04;
-      this.compressor.release.value = 0.25;
+      this.compressor.ratio.value = 3.5;
+      this.compressor.attack.value = 0.025;
+      this.compressor.release.value = 0.22;
 
       this.warmBus = this.ctx.createBiquadFilter();
       this.warmBus.type = 'lowpass';
       this.warmBus.frequency.value = 4200;
       this.warmBus.Q.value = 0.45;
 
+      this.presenceBus = this.ctx.createBiquadFilter();
+      this.presenceBus.type = 'lowpass';
+      this.presenceBus.frequency.value = 7600;
+      this.presenceBus.Q.value = 0.4;
+
       this.warmBus.connect(this.compressor);
+      this.presenceBus.connect(this.compressor);
       this.compressor.connect(this.master);
       this.master.connect(this.ctx.destination);
     }
@@ -227,7 +242,7 @@ const Sound = {
     const thematic = getThematicTrack(track);
     if (thematic) {
       if (!this.bgm) {
-        toast('Reprodutor de áudio indisponível', 'close');
+        toast(typeof tr === 'function' ? tr('audio.unavailable', 'Reprodutor de áudio indisponível') : 'Reprodutor de áudio indisponível', 'close');
         this.playing = false;
         this.syncVisuals();
         this.updateUI();
@@ -251,7 +266,7 @@ const Sound = {
 
     if (track === 'custom') {
       if (!this.bgm || !this.customSrc) {
-        toast('Envie um arquivo de áudio nas configurações', 'music');
+        toast(typeof tr === 'function' ? tr('audio.sendFirst', 'Envie um arquivo de áudio nas configurações') : 'Envie um arquivo de áudio nas configurações', 'music');
         this.playing = false;
         this.syncVisuals();
         this.updateUI();
@@ -271,7 +286,10 @@ const Sound = {
     }
 
     const ctx = this.ensureCtx();
-    if (!ctx) { toast('Áudio não suportado neste navegador', 'close'); return; }
+    if (!ctx) {
+      toast(typeof tr === 'function' ? tr('audio.unsupported', 'Áudio não suportado neste navegador') : 'Áudio não suportado neste navegador', 'close');
+      return;
+    }
     try {
       if (track === 'rain') this.buildRain(1.0);
       else if (track === 'ocean') this.buildOcean();
@@ -279,6 +297,7 @@ const Sound = {
       else if (track === 'fireplace') this.buildFireplace();
       else if (track === 'night') this.buildNight();
       else if (track === 'typing') this.buildTyping();
+      else if (track === 'keys') this.buildMechanicalKeys();
       else if (track === 'writing') this.buildWriting();
       else this.buildRain(1.0);
       this.playing = true;
@@ -705,72 +724,72 @@ const Sound = {
     this.buildNightChords({ noVinyl: true });
   },
 
-  /* Teclado macio em ritmo humano para estudo e produtividade */
+  /* Toques macios dos dedos em ritmo humano (ganho equilibrado com Chuva/Oceano) */
   buildTyping() {
     const ctx = this.ctx;
-    // Leito sutil de sala silenciosa para não soar cortado entre teclas
+    const bus = this.presenceBus || this.warmBus;
     const room = ctx.createBufferSource();
     room.buffer = this.brownNoise();
     room.loop = true;
     const roomLp = ctx.createBiquadFilter();
     roomLp.type = 'lowpass';
-    roomLp.frequency.value = 180;
+    roomLp.frequency.value = 210;
     const roomG = ctx.createGain();
-    roomG.gain.value = 0.014;
+    roomG.gain.value = 0.032;
     room.connect(roomLp);
     roomLp.connect(roomG);
     roomG.connect(this.warmBus);
     room.start();
     this.nodes.push(room, roomLp, roomG);
 
-    const triggerKey = (kind) => {
+    const triggerTap = (kind) => {
       if (!this.playing) return;
       try {
         const t = ctx.currentTime + 0.005;
         const isSpace = kind === 'space';
         const isEnter = kind === 'enter';
 
-        // 1. Corpo abafado ("thock" macio da tecla)
+        // 1. Batida macia da polpa do dedo / feltro
         const osc = ctx.createOscillator();
         osc.type = isSpace ? 'sine' : 'triangle';
-        const startHz = isSpace ? 132 + Math.random() * 14 : (isEnter ? 148 + Math.random() * 18 : 172 + Math.random() * 44);
-        const endHz = isSpace ? 54 : (isEnter ? 62 : 76 + Math.random() * 14);
+        const startHz = isSpace ? 138 + Math.random() * 14 : (isEnter ? 156 + Math.random() * 18 : 185 + Math.random() * 48);
+        const endHz = isSpace ? 56 : (isEnter ? 66 : 82 + Math.random() * 16);
         osc.frequency.setValueAtTime(startHz, t);
-        osc.frequency.exponentialRampToValueAtTime(endHz, t + 0.024);
+        osc.frequency.exponentialRampToValueAtTime(endHz, t + 0.026);
 
         const og = ctx.createGain();
-        const thockGain = isSpace ? 0.095 : (isEnter ? 0.088 : 0.055 + Math.random() * 0.03);
+        const thockGain = isSpace ? 0.28 : (isEnter ? 0.25 : 0.17 + Math.random() * 0.08);
         og.gain.setValueAtTime(0.0001, t);
         og.gain.linearRampToValueAtTime(thockGain, t + 0.003);
-        og.gain.exponentialRampToValueAtTime(0.0001, t + (isSpace ? 0.048 : 0.036));
+        og.gain.exponentialRampToValueAtTime(0.0001, t + (isSpace ? 0.056 : 0.044));
         osc.connect(og);
-        og.connect(this.warmBus);
+        og.connect(bus);
         osc.start(t);
-        osc.stop(t + 0.06);
+        osc.stop(t + 0.07);
 
-        // 2. Clique tátil suave do switch (ruído filtrado quente)
+        // 2. Contato tátil suave
         const clickSrc = ctx.createBufferSource();
         clickSrc.buffer = this.pinkNoise();
         const bp = ctx.createBiquadFilter();
         bp.type = 'bandpass';
-        bp.frequency.value = isSpace ? 980 + Math.random() * 240 : (1450 + Math.random() * 680);
-        bp.Q.value = 1.7;
+        bp.frequency.value = isSpace ? 1150 + Math.random() * 280 : (1650 + Math.random() * 820);
+        bp.Q.value = 1.4;
         const cg = ctx.createGain();
-        const clickPeak = isSpace ? 0.055 : 0.042 + Math.random() * 0.028;
+        const clickPeak = isSpace ? 0.17 : 0.13 + Math.random() * 0.08;
         cg.gain.setValueAtTime(0.0001, t);
         cg.gain.linearRampToValueAtTime(clickPeak, t + 0.002);
-        cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.018);
+        cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.022);
         clickSrc.connect(bp);
         bp.connect(cg);
-        cg.connect(this.warmBus);
-        clickSrc.start(t, Math.random() * 2.5, 0.03);
+        cg.connect(bus);
+        clickSrc.start(t, Math.random() * 2.5, 0.036);
 
         this.timers.push(setTimeout(() => {
           try {
             osc.disconnect(); og.disconnect();
             clickSrc.disconnect(); bp.disconnect(); cg.disconnect();
           } catch (e) {}
-        }, 160));
+        }, 170));
       } catch (e) {}
     };
 
@@ -797,24 +816,146 @@ const Sound = {
         }
       }
 
-      triggerKey(kind);
+      triggerTap(kind);
       this.timers.push(setTimeout(scheduleNext, delayMs));
     };
-    this.timers.push(setTimeout(scheduleNext, 120));
+    this.timers.push(setTimeout(scheduleNext, 110));
   },
 
-  /* Escrita suave no papel (traços de lápis/caneta + farfalhar sutil) */
+  /* Teclas mecânicas nítidas (switch click + bottom-out + retorno da tecla) */
+  buildMechanicalKeys() {
+    const ctx = this.ctx;
+    const bus = this.presenceBus || this.warmBus;
+
+    const room = ctx.createBufferSource();
+    room.buffer = this.brownNoise();
+    room.loop = true;
+    const roomLp = ctx.createBiquadFilter();
+    roomLp.type = 'lowpass';
+    roomLp.frequency.value = 190;
+    const roomG = ctx.createGain();
+    roomG.gain.value = 0.024;
+    room.connect(roomLp);
+    roomLp.connect(roomG);
+    roomG.connect(this.warmBus);
+    room.start();
+    this.nodes.push(room, roomLp, roomG);
+
+    const triggerMechKey = (kind) => {
+      if (!this.playing) return;
+      try {
+        const t = ctx.currentTime + 0.005;
+        const isSpace = kind === 'space';
+        const isEnter = kind === 'enter';
+
+        // 1. Clique nítido do switch mecânico na descida
+        const clickSrc = ctx.createBufferSource();
+        clickSrc.buffer = this.pinkNoise();
+        const hp = ctx.createBiquadFilter();
+        hp.type = 'bandpass';
+        hp.frequency.value = isSpace ? 2100 + Math.random() * 450 : (2900 + Math.random() * 1100);
+        hp.Q.value = 1.9;
+        const cg = ctx.createGain();
+        const clickPeak = isSpace ? 0.22 : (isEnter ? 0.24 : 0.20 + Math.random() * 0.09);
+        cg.gain.setValueAtTime(0.0001, t);
+        cg.gain.linearRampToValueAtTime(clickPeak, t + 0.0014);
+        cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.015);
+        clickSrc.connect(hp);
+        hp.connect(cg);
+        cg.connect(bus);
+        clickSrc.start(t, Math.random() * 2.5, 0.028);
+
+        // 2. Impacto da keycap no plate ("clack / thock" definido)
+        const osc = ctx.createOscillator();
+        osc.type = isSpace ? 'triangle' : 'square';
+        const startHz = isSpace ? 155 + Math.random() * 20 : (isEnter ? 210 + Math.random() * 30 : 285 + Math.random() * 85);
+        const endHz = isSpace ? 68 : (isEnter ? 86 : 118 + Math.random() * 28);
+        osc.frequency.setValueAtTime(startHz, t + 0.004);
+        osc.frequency.exponentialRampToValueAtTime(endHz, t + 0.022);
+
+        const bodyLp = ctx.createBiquadFilter();
+        bodyLp.type = 'lowpass';
+        bodyLp.frequency.value = isSpace ? 680 : 1280;
+        const og = ctx.createGain();
+        const bodyPeak = isSpace ? 0.22 : (isEnter ? 0.20 : 0.14 + Math.random() * 0.06);
+        og.gain.setValueAtTime(0.0001, t + 0.003);
+        og.gain.linearRampToValueAtTime(bodyPeak, t + 0.006);
+        og.gain.exponentialRampToValueAtTime(0.0001, t + (isSpace ? 0.048 : 0.032));
+        osc.connect(bodyLp);
+        bodyLp.connect(og);
+        og.connect(bus);
+        osc.start(t + 0.003);
+        osc.stop(t + 0.06);
+
+        // 3. Retorno sutil da mola (upstroke) ~35-55ms depois
+        const upDelay = 0.036 + Math.random() * 0.022;
+        const upSrc = ctx.createBufferSource();
+        upSrc.buffer = this.pinkNoise();
+        const upBp = ctx.createBiquadFilter();
+        upBp.type = 'bandpass';
+        upBp.frequency.value = isSpace ? 1750 : 2450 + Math.random() * 700;
+        upBp.Q.value = 1.6;
+        const ug = ctx.createGain();
+        const upPeak = isSpace ? 0.10 : 0.085 + Math.random() * 0.04;
+        ug.gain.setValueAtTime(0.0001, t + upDelay);
+        ug.gain.linearRampToValueAtTime(upPeak, t + upDelay + 0.0018);
+        ug.gain.exponentialRampToValueAtTime(0.0001, t + upDelay + 0.014);
+        upSrc.connect(upBp);
+        upBp.connect(ug);
+        ug.connect(bus);
+        upSrc.start(t + upDelay, Math.random() * 2.5, 0.024);
+
+        this.timers.push(setTimeout(() => {
+          try {
+            clickSrc.disconnect(); hp.disconnect(); cg.disconnect();
+            osc.disconnect(); bodyLp.disconnect(); og.disconnect();
+            upSrc.disconnect(); upBp.disconnect(); ug.disconnect();
+          } catch (e) {}
+        }, 210));
+      } catch (e) {}
+    };
+
+    let burstLeft = 6 + Math.floor(Math.random() * 9);
+    let sinceSpace = 0;
+
+    const scheduleNext = () => {
+      if (!this.playing) return;
+      let delayMs = 82 + Math.random() * 92;
+      let kind = 'char';
+
+      if (burstLeft <= 0) {
+        kind = Math.random() < 0.32 ? 'enter' : 'space';
+        burstLeft = 5 + Math.floor(Math.random() * 10);
+        sinceSpace = 0;
+        delayMs = 280 + Math.random() * 640;
+      } else {
+        sinceSpace++;
+        burstLeft--;
+        if (sinceSpace >= 4 && Math.random() < 0.25) {
+          kind = 'space';
+          sinceSpace = 0;
+          delayMs = 115 + Math.random() * 105;
+        }
+      }
+
+      triggerMechKey(kind);
+      this.timers.push(setTimeout(scheduleNext, delayMs));
+    };
+    this.timers.push(setTimeout(scheduleNext, 100));
+  },
+
+  /* Escrita no papel (traços de lápis/caneta + farfalhar, volume presente e nítido) */
   buildWriting() {
     const ctx = this.ctx;
-    // Ambiência quente de mesa / papel em repouso
+    const bus = this.presenceBus || this.warmBus;
     const desk = ctx.createBufferSource();
     desk.buffer = this.brownNoise();
     desk.loop = true;
     const deskLp = ctx.createBiquadFilter();
     deskLp.type = 'lowpass';
-    deskLp.frequency.value = 260;
+    deskLp.frequency.value = 300;
     const deskG = ctx.createGain();
-    deskG.gain.value = 0.022;
+    deskG.gain.value = 0.048;
     desk.connect(deskLp);
     deskLp.connect(deskG);
     deskG.connect(this.warmBus);
@@ -827,39 +968,39 @@ const Sound = {
         const t = ctx.currentTime + 0.008;
         const isRustle = kind === 'rustle';
         const isSweep = kind === 'sweep';
-        const dur = isRustle ? 0.34 : (isSweep ? 0.16 + Math.random() * 0.10 : 0.045 + Math.random() * 0.075);
+        const dur = isRustle ? 0.36 : (isSweep ? 0.16 + Math.random() * 0.11 : 0.055 + Math.random() * 0.08);
 
         const src = ctx.createBufferSource();
         src.buffer = this.pinkNoise();
 
-        // Grão principal do papel (médio-agudo suave sem chiado estridente)
+        // Grão principal do grafite/caneta no papel
         const bp = ctx.createBiquadFilter();
         bp.type = 'bandpass';
         bp.frequency.value = isRustle
-          ? 760 + Math.random() * 240
-          : (1550 + Math.random() * 780);
-        bp.Q.value = isRustle ? 0.85 : (1.5 + Math.random() * 0.9);
+          ? 920 + Math.random() * 280
+          : (1850 + Math.random() * 980);
+        bp.Q.value = isRustle ? 0.85 : (1.35 + Math.random() * 0.85);
 
-        // Leve corpo amadeirado da mesa durante o traço
+        // Corpo amadeirado da mesa durante o traço
         const lpBody = ctx.createBiquadFilter();
         lpBody.type = 'lowpass';
-        lpBody.frequency.value = 440;
+        lpBody.frequency.value = 520;
 
         const gMain = ctx.createGain();
-        const peak = isRustle ? 0.048 : (isSweep ? 0.072 : 0.052 + Math.random() * 0.036);
+        const peak = isRustle ? 0.16 : (isSweep ? 0.24 : 0.18 + Math.random() * 0.11);
         gMain.gain.setValueAtTime(0.0001, t);
-        gMain.gain.linearRampToValueAtTime(peak, t + dur * 0.28);
-        gMain.gain.linearRampToValueAtTime(peak * 0.68, t + dur * 0.68);
+        gMain.gain.linearRampToValueAtTime(peak, t + dur * 0.26);
+        gMain.gain.linearRampToValueAtTime(peak * 0.72, t + dur * 0.7);
         gMain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
 
         const gBody = ctx.createGain();
         gBody.gain.setValueAtTime(0.0001, t);
-        gBody.gain.linearRampToValueAtTime(peak * 0.38, t + dur * 0.32);
+        gBody.gain.linearRampToValueAtTime(peak * 0.42, t + dur * 0.32);
         gBody.gain.exponentialRampToValueAtTime(0.0001, t + dur);
 
         src.connect(bp);
         bp.connect(gMain);
-        gMain.connect(this.warmBus);
+        gMain.connect(bus);
 
         src.connect(lpBody);
         lpBody.connect(gBody);
@@ -902,7 +1043,7 @@ const Sound = {
       triggerStroke(kind);
       this.timers.push(setTimeout(scheduleNext, delayMs));
     };
-    this.timers.push(setTimeout(scheduleNext, 140));
+    this.timers.push(setTimeout(scheduleNext, 130));
   },
 
   /* ---------- efeitos pontuais suavizados ---------- */
@@ -964,6 +1105,7 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     CUSTOM_THEMATIC_TRACKS,
     TRACK_LABELS,
+    getTrackLabel,
     getThematicTrack,
     isThematicTrack,
     buildTrackCoverSvgDataUrl,

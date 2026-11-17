@@ -31,6 +31,18 @@ const WALLPAPERS = [
   { id: 'nenhum',  label: 'Tema puro', bg: '' }
 ];
 
+function getThemeLabel(id) {
+  const item = THEMES.find(x => x.id === id);
+  const fb = item ? item.label : id;
+  return typeof t === 'function' ? t('theme.' + id, null, fb) : fb;
+}
+
+function getWallpaperLabel(id) {
+  const item = WALLPAPERS.find(x => x.id === id);
+  const fb = item ? item.label : id;
+  return typeof t === 'function' ? t('wp.' + id, null, fb) : fb;
+}
+
 /* fontes disponíveis para o cronômetro */
 const FONTS = [
   { id: 'inter',     label: 'Inter',        family: "'Inter', sans-serif" },
