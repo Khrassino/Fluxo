@@ -68,7 +68,7 @@ const FONTS = [
   { id: 'vt323',     label: 'VT323',        family: "'VT323', monospace" }
 ];
 
-/* famílias pedidas sob demanda — a página só baixa Inter na abertura */
+/* catálogo de fontes disponíveis localmente via css/fonts.css */
 const FONT_QUERY = {
   inter: 'Inter:wght@200..800',
   orbitron: 'Orbitron:wght@500;700',
@@ -315,19 +315,8 @@ const Themes = {
   _wpFadeTimer: null,
   _lastWpBg: '',
 
-  ensureFonts(ids) {
-    const pending = [];
-    (ids || []).forEach(id => {
-      if (!FONT_QUERY[id] || this.loadedFonts[id]) return;
-      this.loadedFonts[id] = true;
-      pending.push(id);
-    });
-    if (!pending.length) return;
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = 'https://fonts.googleapis.com/css2?family=' +
-      pending.map(id => FONT_QUERY[id]).join('&family=') + '&display=swap';
-    document.head.appendChild(link);
+  ensureFonts() {
+    /* todas as fontes já estão disponíveis localmente via css/fonts.css */
   },
 
   activeMusicTheme() {

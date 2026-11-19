@@ -284,6 +284,7 @@ const Panel = {
   openId: 'themes',
   confirmingReset: false,
   pendingBackup: null,
+  editingQuoteId: null,
 
   init() {
     $('#panel-close').innerHTML = svgIcon('close');
@@ -306,6 +307,7 @@ const Panel = {
   close() {
     this.confirmingReset = false;
     this.pendingBackup = null;
+    this.editingQuoteId = null;
     document.body.classList.remove('panel-open');
     if (typeof Idle !== 'undefined') Idle.wake();
   },
@@ -318,6 +320,7 @@ const Panel = {
     this.openId = id;
     this.confirmingReset = false;
     this.pendingBackup = null;
+    this.editingQuoteId = null;
     this.render();
     const head = $('#panel-body .panel-drawer.open .drawer-head');
     if (head) head.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -342,6 +345,7 @@ const Panel = {
     this.openId = this.openId === id ? null : id;
     this.confirmingReset = false;
     this.pendingBackup = null;
+    this.editingQuoteId = null;
     this.render();
     const head = $('#panel-body .panel-drawer.open .drawer-head');
     if (head) head.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -1077,6 +1081,15 @@ const Panel = {
     sec.append(this.dragEditor(items, HOME_LAYOUT, (arr) => {
       Store.state.home.layout = arr;
       Store.save();
+      const qItem = arr.find(x => x.id === 'quote');
+      if (qItem && typeof QuotesStore !== 'undefined') {
+        QuotesStore.state.enabled = qItem.on !== false;
+        QuotesStore.save();
+        if (typeof QuotesUI !== 'undefined') {
+          QuotesUI.refreshSelection('sync');
+          QuotesUI.render();
+        }
+      }
       HomePage.applyLayout();
       this.render();
     }, { labelPrefix: 'home.layout.' }));
@@ -1086,6 +1099,14 @@ const Panel = {
     resetLayout.addEventListener('click', () => {
       Store.state.home.layout = Store.defaults().home.layout;
       Store.save();
+      if (typeof QuotesStore !== 'undefined') {
+        QuotesStore.state.enabled = true;
+        QuotesStore.save();
+        if (typeof QuotesUI !== 'undefined') {
+          QuotesUI.refreshSelection('sync');
+          QuotesUI.render();
+        }
+      }
       HomePage.applyLayout();
       this.render();
     });
@@ -1111,6 +1132,8 @@ const Panel = {
     });
     sec.append(actionRow([resetChips]));
 
+    this.appendQuotesControls(sec);
+
     this.idleSwitchList(
       sec,
       tr('panel.home.idleNote', 'O relógio permanece sempre visível; escolha quais elementos continuam aparecendo no modo calmo.'),
@@ -1133,6 +1156,246 @@ const Panel = {
     );
 
     return sec;
+  },
+
+  /* ---- bloco compacto de citações dentro de Início ---- */
+  appendQuotesControls(sec) {
+    const st = typeof QuotesStore !== 'undefined' && QuotesStore.state
+      ? QuotesStore.state
+      : { enabled: true, frequency: 'daily', sources: { internal: true, custom: true, api: false }, style: { size: 15, font: 'inter', align: 'center', showAuthor: true }, custom: [] };
+    const src = st.sources || {};
+    const style = st.style || {};
+    const layoutQuote = HomePage.layout().find(x => x.id === 'quote');
+    const quoteEnabled = st.enabled !== false && (!layoutQuote || layoutQuote.on !== false);
+
+    sec.append(pSub(tr('panel.drawer.quotes', 'Citações')));
+    sec.append(switchRow(tr('panel.quotes.enable', 'Exibir citações na tela inicial'), quoteEnabled, (on) => {
+      if (typeof QuotesUI !== 'undefined') QuotesUI.setEnabled(on);
+      this.render();
+    }));
+
+    const activeGroup = pGroup(!quoteEnabled);
+
+    const freqCtl = pCtl('<span>' + tr('panel.quotes.frequency', 'Frequência de troca') + '</span>');
+    freqCtl.append(chipGroup([
+      { id: 'daily',  label: tr('panel.quotes.freqDaily', 'Diariamente') },
+      { id: 'open',   label: tr('panel.quotes.freqOpen', 'A cada abertura') },
+      { id: 'manual', label: tr('panel.quotes.freqManual', 'Manualmente') }
+    ], st.frequency || 'daily', (id) => {
+      if (typeof QuotesUI !== 'undefined') QuotesUI.setFrequency(id);
+      this.render();
+    }));
+    activeGroup.append(freqCtl);
+
+    const nextBtn = el('button', 'chip', svgIcon('reset') + '<span>' + tr('panel.quotes.nextNow', 'Trocar citação agora') + '</span>');
+    nextBtn.type = 'button';
+    nextBtn.addEventListener('click', () => {
+      if (typeof QuotesUI !== 'undefined') QuotesUI.nextQuote();
+      this.render();
+    });
+    activeGroup.append(actionRow([nextBtn]));
+
+    const srcCtl = pCtl('<span>' + tr('panel.quotes.sourcesSub', 'Fontes') + '</span>');
+    srcCtl.append(switchRow(tr('panel.quotes.srcInternal', 'Biblioteca interna'), !!src.internal, (on) => {
+      if (typeof QuotesUI !== 'undefined') QuotesUI.setSource('internal', on);
+      this.render();
+    }));
+    srcCtl.append(switchRow(tr('panel.quotes.srcCustom', 'Minhas citações'), !!src.custom, (on) => {
+      if (typeof QuotesUI !== 'undefined') QuotesUI.setSource('custom', on);
+      this.render();
+    }));
+    srcCtl.append(switchRow(tr('panel.quotes.srcApi', 'API externa'), !!src.api, (on) => {
+      if (typeof QuotesUI !== 'undefined') QuotesUI.setSource('api', on);
+      this.render();
+    }));
+    srcCtl.append(el('p', 'panel-note', tr('panel.quotes.sourcesNote', 'Combine uma ou mais fontes. Se uma fonte estiver vazia ou offline, as demais continuam disponíveis.')));
+
+    if (src.api) {
+      srcCtl.append(el('p', 'panel-note', tr('panel.quotes.apiNote', 'Citações externas em inglês via DummyJSON, salvas em cache local diário sem tradução automática.')));
+      const refreshBtn = el('button', 'chip', svgIcon('reset') + '<span>' + tr('panel.quotes.apiRefresh', 'Atualizar cache externo') + '</span>');
+      refreshBtn.type = 'button';
+      refreshBtn.addEventListener('click', async () => {
+        if (refreshBtn.disabled || typeof QuotesUI === 'undefined') return;
+        refreshBtn.disabled = true;
+        await QuotesUI.refreshExternalNow();
+        this.render();
+      });
+      srcCtl.append(actionRow([refreshBtn]));
+    }
+
+    const poolCount = typeof QuotesStore !== 'undefined' ? QuotesStore.getPool().length : 0;
+    if (quoteEnabled && poolCount === 0) {
+      srcCtl.append(el('p', 'panel-note', tr('panel.quotes.noSources', 'Nenhuma citação disponível com as fontes selecionadas.')));
+    }
+    activeGroup.append(srcCtl);
+
+    activeGroup.append(sliderRow(tr('panel.quotes.size', 'Tamanho do texto'), 12, 24, style.size || 15, v => v + 'px', (v) => {
+      if (typeof QuotesUI !== 'undefined') QuotesUI.setStyle({ size: v });
+    }));
+
+    const fontCtl = pCtl('<span>' + tr('panel.quotes.font', 'Fonte') + '</span>');
+    if (typeof FONTS !== 'undefined') {
+      Themes.ensureFonts(FONTS.map(f => f.id));
+      fontCtl.append(chipGroup(
+        FONTS.map(f => ({ id: f.id, label: f.label, cls: 'font-chip', style: { fontFamily: f.family } })),
+        style.font || 'inter',
+        (id) => {
+          if (typeof QuotesUI !== 'undefined') QuotesUI.setStyle({ font: id });
+          this.render();
+        }
+      ));
+    }
+    activeGroup.append(fontCtl);
+
+    const alignCtl = pCtl('<span>' + tr('panel.quotes.align', 'Alinhamento') + '</span>');
+    alignCtl.append(chipGroup([
+      { id: 'left',   label: tr('panel.quotes.alignLeft', 'Esquerda'), icon: 'alignL' },
+      { id: 'center', label: tr('panel.quotes.alignCenter', 'Centro'),  icon: 'alignC' },
+      { id: 'right',  label: tr('panel.quotes.alignRight', 'Direita'),  icon: 'alignR' }
+    ], style.align || 'center', (id) => {
+      if (typeof QuotesUI !== 'undefined') QuotesUI.setStyle({ align: id });
+      this.render();
+    }));
+    activeGroup.append(alignCtl);
+
+    activeGroup.append(switchRow(tr('panel.quotes.showAuthor', 'Exibir autor ou referência'), style.showAuthor !== false, (on) => {
+      if (typeof QuotesUI !== 'undefined') QuotesUI.setStyle({ showAuthor: on });
+    }));
+
+    lockGroup(activeGroup, !quoteEnabled, !quoteEnabled ? tr('panel.quotes.disabledNote', 'Ative as citações para ajustar frequência, fontes e aparência.') : '');
+    sec.append(activeGroup);
+
+    /* ---- Minhas citações (sempre 2 campos: texto e autor/referência opcional) ---- */
+    const customCtl = pCtl('<span>' + tr('panel.quotes.customSub', 'Minhas citações') + '</span>');
+
+    const form = el('form', 'quote-form');
+    const textInp = el('textarea', 'quote-input');
+    textInp.rows = 2;
+    textInp.maxLength = 500;
+    textInp.placeholder = tr('panel.quotes.textPh', 'Texto da citação…');
+    textInp.setAttribute('aria-label', tr('panel.quotes.textAria', 'Texto da citação'));
+
+    const authorInp = el('input', 'quote-input');
+    authorInp.type = 'text';
+    authorInp.maxLength = 120;
+    authorInp.placeholder = tr('panel.quotes.authorPh', 'Autor ou referência (opcional)…');
+    authorInp.setAttribute('aria-label', tr('panel.quotes.authorAria', 'Autor ou referência (opcional)'));
+
+    const addBtn = el('button', 'chip is-primary', svgIcon('plus') + '<span>' + tr('panel.quotes.addBtn', 'Adicionar citação') + '</span>');
+    addBtn.type = 'submit';
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const txt = textInp.value.trim();
+      if (!txt) {
+        toast(tr('panel.quotes.emptyTextErr', 'Escreva o texto da citação primeiro'), 'close');
+        textInp.focus();
+        return;
+      }
+      if (typeof QuotesUI !== 'undefined') {
+        QuotesUI.addCustom(txt, authorInp.value.trim());
+      }
+      textInp.value = '';
+      authorInp.value = '';
+      this.editingQuoteId = null;
+      this.render();
+      toast(tr('panel.quotes.addedToast', 'Citação adicionada'), 'check');
+    });
+
+    form.append(textInp, authorInp, actionRow([addBtn]));
+    customCtl.append(form);
+
+    const customList = Array.isArray(st.custom) ? st.custom : [];
+    if (customList.length === 0) {
+      customCtl.append(el('p', 'panel-note', tr('panel.quotes.customEmpty', 'Nenhuma citação personalizada ainda.')));
+    } else {
+      const listEl = el('div', 'quote-list');
+      customList.forEach(item => {
+        const row = el('div', 'quote-row');
+        if (this.editingQuoteId === item.id) {
+          const editForm = el('form', 'quote-edit-form');
+          const eText = el('textarea', 'quote-input');
+          eText.rows = 2;
+          eText.maxLength = 500;
+          eText.value = item.text;
+          eText.placeholder = tr('panel.quotes.textPh', 'Texto da citação…');
+          eText.setAttribute('aria-label', tr('panel.quotes.textAria', 'Texto da citação'));
+
+          const eAuthor = el('input', 'quote-input');
+          eAuthor.type = 'text';
+          eAuthor.maxLength = 120;
+          eAuthor.value = item.author || '';
+          eAuthor.placeholder = tr('panel.quotes.authorPh', 'Autor ou referência (opcional)…');
+          eAuthor.setAttribute('aria-label', tr('panel.quotes.authorAria', 'Autor ou referência (opcional)'));
+
+          const cancelBtn = el('button', 'chip', tr('panel.quotes.cancelBtn', 'Cancelar'));
+          cancelBtn.type = 'button';
+          cancelBtn.addEventListener('click', () => {
+            this.editingQuoteId = null;
+            this.render();
+          });
+
+          const saveBtn = el('button', 'chip is-primary', tr('panel.quotes.saveBtn', 'Salvar'));
+          saveBtn.type = 'submit';
+
+          editForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const nextTxt = eText.value.trim();
+            if (!nextTxt) {
+              toast(tr('panel.quotes.emptyTextErr', 'Escreva o texto da citação primeiro'), 'close');
+              eText.focus();
+              return;
+            }
+            if (typeof QuotesUI !== 'undefined') {
+              QuotesUI.updateCustom(item.id, nextTxt, eAuthor.value.trim());
+            }
+            this.editingQuoteId = null;
+            this.render();
+          });
+
+          const act = el('div', 'quote-edit-actions');
+          act.append(cancelBtn, saveBtn);
+          editForm.append(eText, eAuthor, act);
+          row.append(editForm);
+        } else {
+          const main = el('div', 'quote-row-main');
+          const pTxt = el('p', 'quote-row-text');
+          pTxt.textContent = item.text;
+          main.append(pTxt);
+          if (item.author) {
+            const pAuth = el('p', 'quote-row-author');
+            pAuth.textContent = item.author;
+            main.append(pAuth);
+          }
+
+          const actions = el('div', 'quote-row-actions');
+          const editBtn = el('button', 'quote-row-btn', svgIcon('pencil'));
+          editBtn.type = 'button';
+          editBtn.title = tr('panel.quotes.editAria', 'Editar citação');
+          editBtn.setAttribute('aria-label', tr('panel.quotes.editAria', 'Editar citação'));
+          editBtn.addEventListener('click', () => {
+            this.editingQuoteId = item.id;
+            this.render();
+          });
+
+          const delBtn = el('button', 'quote-row-btn danger', svgIcon('trash'));
+          delBtn.type = 'button';
+          delBtn.title = tr('panel.quotes.delAria', 'Excluir citação');
+          delBtn.setAttribute('aria-label', tr('panel.quotes.delAria', 'Excluir citação'));
+          delBtn.addEventListener('click', () => {
+            if (typeof QuotesUI !== 'undefined') QuotesUI.deleteCustom(item.id);
+            this.render();
+          });
+
+          actions.append(editBtn, delBtn);
+          row.append(main, actions);
+        }
+        listEl.append(row);
+      });
+      customCtl.append(listEl);
+    }
+
+    sec.append(customCtl);
   },
 
   /* ================= 5. página: cronômetro ================= */
@@ -1903,7 +2166,7 @@ const Panel = {
     try {
       localStorage.removeItem(STORE_KEY);
       Object.keys(localStorage)
-        .filter(k => k.startsWith('fluxo-file-') || k.startsWith('fluxo-ws-'))
+        .filter(k => k.startsWith('fluxo-file-') || k.startsWith('fluxo-ws-') || k.startsWith('fluxo-quotes-'))
         .forEach(k => localStorage.removeItem(k));
     } catch (e) { /* ignora */ }
     try {

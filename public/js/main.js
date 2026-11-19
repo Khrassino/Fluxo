@@ -21,6 +21,7 @@ async function boot() {
 
   Motion.init();
 
+  if (typeof QuotesUI !== 'undefined') QuotesUI.init();
   HomePage.init();
   TimerPage.init();
   TrackerPage.init();

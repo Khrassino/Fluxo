@@ -36,12 +36,22 @@ const LayoutEdit = {
       save: (arr) => {
         Store.state.home.layout = arr;
         Store.save();
+        const qItem = arr.find(x => x.id === 'quote');
+        if (qItem && typeof QuotesStore !== 'undefined') {
+          QuotesStore.state.enabled = qItem.on !== false;
+          QuotesStore.save();
+          if (typeof QuotesUI !== 'undefined') {
+            QuotesUI.refreshSelection('sync');
+            QuotesUI.render();
+          }
+        }
         HomePage.applyLayout();
       },
       nodes: {
         greet: '#home-greet',
         clock: '#home-clock',
         date:  '#home-date',
+        quote: '#home-quote',
         chips: '#home-chips'
       }
     };

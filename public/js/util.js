@@ -131,6 +131,7 @@ const ICON_PATHS = {
   alignC:   '<path d="M4 6h16M7 10h10M5 14h14M8 18h8"/>',
   alignR:   '<path d="M4 6h16M10 10h10M6 14h14M12 18h8"/>',
   alignJ:   '<path d="M4 6h16M4 10h16M4 14h16M4 18h16"/>',
+  quote:    '<path d="M10 7H6a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h3v2a3 3 0 0 1-3 3"/><path d="M20 7h-4a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h3v2a3 3 0 0 1-3 3"/>',
   logo:     '<circle cx="12" cy="12" r="7.6"/><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/>'
 };
 

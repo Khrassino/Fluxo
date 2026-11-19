@@ -10,6 +10,7 @@
 .home-wrap > :nth-child(2) { animation-delay: .07s; }
 .home-wrap > :nth-child(3) { animation-delay: .14s; }
 .home-wrap > :nth-child(4) { animation-delay: .21s; }
+.home-wrap > :nth-child(5) { animation-delay: .26s; }
 @keyframes homeIn {
   from { opacity: 0; transform: translateY(14px); }
   to   { opacity: 1; transform: none; }
@@ -30,8 +31,37 @@
 }
 .home-date { margin: 0; color: var(--text-dim); font-size: 15px; }
 
+/* citação minimalista na página inicial */
+.home-quote {
+  margin: 18px auto 6px;
+  padding: 0 8px;
+  width: min(560px, 86vw);
+  font-family: var(--quote-font, var(--font-ui));
+  font-size: var(--quote-size, 15px);
+  text-align: center;
+  transition: opacity .9s cubic-bezier(.4, 0, .2, 1), transform .9s cubic-bezier(.4, 0, .2, 1);
+}
+.home-quote[data-align="left"] { text-align: left; }
+.home-quote[data-align="center"] { text-align: center; }
+.home-quote[data-align="right"] { text-align: right; }
+.home-quote-text {
+  margin: 0;
+  color: var(--text-dim);
+  line-height: 1.58;
+  font-weight: 400;
+  letter-spacing: .005em;
+  text-wrap: pretty;
+}
+.home-quote-author {
+  margin: 7px 0 0;
+  color: var(--text-faint);
+  font-size: .82em;
+  letter-spacing: .04em;
+  line-height: 1.4;
+}
+
 .home-chips {
-  display: flex; gap: 10px; margin-top: 38px;
+  display: flex; gap: 10px; margin-top: 34px;
   flex-wrap: wrap; justify-content: center;
 }
 .home-chip {
@@ -75,6 +105,11 @@ body.idle .home-clock {
   text-shadow: 0 10px 56px rgba(0,0,0,.34);
 }
 body.idle .home-wrap { gap: 0; }
+
+@media (max-width: 520px) {
+  .home-quote { margin: 14px auto 4px; width: min(560px, 88vw); }
+  .home-chips { margin-top: 26px; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .home-wrap > * { animation: none !important; }

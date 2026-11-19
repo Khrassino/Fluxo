@@ -4,6 +4,7 @@ const HOME_LAYOUT = [
   { id: 'greet', label: 'Saudação', idle: false },
   { id: 'clock', label: 'Relógio', locked: true, idle: true },
   { id: 'date',  label: 'Data', idle: false },
+  { id: 'quote', label: 'Citação', idle: false },
   { id: 'chips', label: 'Atalhos', idle: false }
 ];
 
@@ -68,6 +69,7 @@ const HomePage = {
       greet: $('#home-greet'),
       clock: $('#home-clock'),
       date:  $('#home-date'),
+      quote: $('#home-quote'),
       chips: $('#home-chips')
     };
     const seen = {};
@@ -75,13 +77,19 @@ const HomePage = {
       const node = nodes[item.id];
       if (!node) return;
       seen[item.id] = true;
-      node.hidden = item.id === 'clock' ? false : !item.on;
+      if (item.id === 'quote') {
+        const quotesOn = typeof QuotesStore !== 'undefined' ? QuotesStore.isEnabled() : true;
+        const hasQuote = typeof QuotesUI !== 'undefined' ? QuotesUI.hasRenderableQuote() : false;
+        node.hidden = !(item.on && quotesOn && hasQuote);
+      } else {
+        node.hidden = item.id === 'clock' ? false : !item.on;
+      }
       node.classList.toggle('idle-hide', item.idle === false);
       wrap.append(node);
     });
     Object.keys(nodes).forEach(id => {
-      if (seen[id]) return;
-      nodes[id].hidden = false;
+      if (seen[id] || !nodes[id]) return;
+      nodes[id].hidden = id === 'quote';
       wrap.append(nodes[id]);
     });
   },

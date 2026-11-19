@@ -102,6 +102,7 @@ const Store = {
           { id: 'greet', on: true, idle: false },
           { id: 'clock', on: true, locked: true, idle: true }, // relógio é fixo
           { id: 'date',  on: true, idle: false },
+          { id: 'quote', on: true, idle: false },
           { id: 'chips', on: true, idle: false }
         ],
         chips: [                     // atalhos personalizáveis da tela inicial

@@ -1127,6 +1127,75 @@ test('i18n includes PT and EN translations for backup import and confirmation', 
   assert.ok(out.en.invalid.includes('JSON'));
 });
 
+test('Self-hosted WOFF2 fonts cover all FONT_QUERY/FONTS families without external Google Fonts links', () => {
+  const html = fs.readFileSync(path.resolve(process.cwd(), 'index.html'), 'utf8');
+  assert.ok(!html.includes('fonts.googleapis.com'), 'index.html should not reference fonts.googleapis.com');
+  assert.ok(!html.includes('fonts.gstatic.com'), 'index.html should not reference fonts.gstatic.com');
+  assert.ok(html.includes('href="css/fonts.css"'), 'index.html should load css/fonts.css');
+
+  const fontsCss = fs.readFileSync(path.resolve(process.cwd(), 'public/css/fonts.css'), 'utf8');
+  const faceRe = /@font-face\s*\{([^}]+)\}/g;
+  const familiesInCss = new Set<string>();
+  const referencedWoff2 = new Set<string>();
+  let match: RegExpExecArray | null;
+  let faceCount = 0;
+
+  while ((match = faceRe.exec(fontsCss)) !== null) {
+    faceCount++;
+    const body = match[1];
+    assert.ok(/font-display:\s*swap\s*;/.test(body), '@font-face must declare font-display: swap');
+    const famM = /font-family:\s*'([^']+)'\s*;/.exec(body);
+    assert.ok(famM, '@font-face must declare quoted font-family');
+    familiesInCss.add(famM[1]);
+
+    const srcM = /src:\s*url\("\.\.\/fonts\/([^"]+\.woff2)"\)\s*format\("woff2"\)\s*;/.exec(body);
+    assert.ok(srcM, '@font-face src must point to ../fonts/<file>.woff2');
+    referencedWoff2.add(srcM[1]);
+    assert.ok(
+      fs.existsSync(path.resolve(process.cwd(), 'public/fonts', srcM[1])),
+      'Missing woff2 file on disk: ' + srcM[1]
+    );
+  }
+
+  assert.ok(faceCount >= 21, 'Expected at least 21 @font-face rules');
+  assert.ok(/font-family:\s*'Inter'[\s\S]*?font-weight:\s*200 800\s*;/.test(fontsCss), 'Inter must support variable weight 200 800');
+
+  // Verify every font family from themes.js FONTS/FONT_QUERY exists in fonts.css and Themes.ensureFonts creates no links
+  let appendedCount = 0;
+  const themeCtx = vm.createContext({
+    console,
+    Math,
+    Map,
+    Set,
+    document: {
+      head: { appendChild: () => { appendedCount++; }, append: () => { appendedCount++; } },
+      createElement: () => ({}),
+      documentElement: { style: { setProperty: () => {} }, dataset: {} },
+    },
+    clamp: (v: number, a: number, b: number) => Math.max(a, Math.min(b, v)),
+  });
+  const themesSrc = fs.readFileSync(path.resolve(process.cwd(), 'public/js/themes.js'), 'utf8');
+  vm.runInContext(themesSrc, themeCtx);
+
+  const info = JSON.parse(vm.runInContext(`(() => {
+    Themes.ensureFonts(Object.keys(FONT_QUERY));
+    return JSON.stringify({
+      queryKeys: Object.keys(FONT_QUERY),
+      fontFamilies: FONTS.map(f => {
+        const m = /'([^']+)'/.exec(f.family);
+        return m ? m[1] : f.family;
+      })
+    });
+  })()`, themeCtx));
+
+  assert.equal(appendedCount, 0, 'Themes.ensureFonts must not inject any <link> elements');
+  assert.equal(info.queryKeys.length, info.fontFamilies.length);
+  for (const fam of info.fontFamilies) {
+    assert.ok(familiesInCss.has(fam), 'fonts.css missing @font-face for family: ' + fam);
+  }
+});
+
+
 
 
 
