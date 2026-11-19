@@ -283,6 +283,7 @@ const PANEL_DRAWERS = [
 const Panel = {
   openId: 'themes',
   confirmingReset: false,
+  pendingBackup: null,
 
   init() {
     $('#panel-close').innerHTML = svgIcon('close');
@@ -304,6 +305,7 @@ const Panel = {
   },
   close() {
     this.confirmingReset = false;
+    this.pendingBackup = null;
     document.body.classList.remove('panel-open');
     if (typeof Idle !== 'undefined') Idle.wake();
   },
@@ -315,6 +317,7 @@ const Panel = {
   openDrawer(id) {
     this.openId = id;
     this.confirmingReset = false;
+    this.pendingBackup = null;
     this.render();
     const head = $('#panel-body .panel-drawer.open .drawer-head');
     if (head) head.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -338,6 +341,7 @@ const Panel = {
   toggleDrawer(id) {
     this.openId = this.openId === id ? null : id;
     this.confirmingReset = false;
+    this.pendingBackup = null;
     this.render();
     const head = $('#panel-body .panel-drawer.open .drawer-head');
     if (head) head.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -1800,7 +1804,73 @@ const Panel = {
     const exportBtn = el('button', 'chip', svgIcon('download') + '<span>' + tr('panel.general.export', 'Exportar dados (JSON)') + '</span>');
     exportBtn.type = 'button';
     exportBtn.addEventListener('click', () => TrackerPage.exportData());
-    sec.append(actionRow([exportBtn]));
+
+    const importInput = el('input');
+    importInput.type = 'file';
+    importInput.accept = '.json,application/json';
+    importInput.style.display = 'none';
+    importInput.setAttribute('aria-hidden', 'true');
+    importInput.addEventListener('change', async () => {
+      const file = importInput.files && importInput.files[0];
+      importInput.value = '';
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const res = parseAndValidateBackup(text);
+        if (!res.ok) {
+          const fallback = res.errorKey === 'panel.general.importNotFluxo'
+            ? 'Este arquivo não é um backup do Fluxo.'
+            : 'Arquivo de backup JSON inválido.';
+          toast(tr(res.errorKey, fallback), 'close');
+          return;
+        }
+        this.pendingBackup = { name: file.name || 'backup.json', parsed: res };
+        this.confirmingReset = false;
+        this.render();
+      } catch (e) {
+        toast(tr('panel.general.importInvalid', 'Arquivo de backup JSON inválido.'), 'close');
+      }
+    });
+
+    const importBtn = el('button', 'chip', svgIcon('upload') + '<span>' + tr('panel.general.import', 'Importar backup') + '</span>');
+    importBtn.type = 'button';
+    importBtn.addEventListener('click', () => importInput.click());
+
+    sec.append(actionRow([exportBtn, importBtn]), importInput);
+
+    if (this.pendingBackup) {
+      const pb = this.pendingBackup;
+      const msgKey = pb.parsed.isLegacyStateOnly ? 'panel.general.importConfirmLegacy' : 'panel.general.importConfirm';
+      const msgDef = pb.parsed.isLegacyStateOnly
+        ? 'Isso substitui os dados atuais de estado ({file}). Área de trabalho e arquivos atuais serão mantidos.'
+        : 'Isso substitui os dados atuais ({file}). Continuar?';
+      const importBox = el('div', 'panel-hint-box');
+      importBox.append(el('span', null, tr(msgKey, msgDef, { file: pb.name })));
+      const cancelImport = el('button', 'chip', tr('panel.general.cancel', 'Cancelar'));
+      cancelImport.type = 'button';
+      cancelImport.addEventListener('click', () => {
+        this.pendingBackup = null;
+        this.render();
+      });
+      const confirmImport = el('button', 'chip is-primary', tr('panel.general.importConfirmBtn', 'Restaurar backup'));
+      confirmImport.type = 'button';
+      confirmImport.addEventListener('click', async () => {
+        if (confirmImport.disabled) return;
+        confirmImport.disabled = true;
+        cancelImport.disabled = true;
+        confirmImport.textContent = tr('panel.general.importRestoring', 'Restaurando...');
+        try {
+          await AppBackup.restore(pb.parsed);
+          location.reload();
+        } catch (e) {
+          confirmImport.disabled = false;
+          cancelImport.disabled = false;
+          confirmImport.textContent = tr('panel.general.importConfirmBtn', 'Restaurar backup');
+          toast(tr('panel.general.importFail', 'Não foi possível restaurar o backup.'), 'close');
+        }
+      });
+      sec.append(importBox, actionRow([cancelImport, confirmImport]));
+    }
 
     if (!this.confirmingReset) {
       const btn = el('button', 'danger-btn', tr('panel.general.eraseAll', 'Apagar todos os dados'));
@@ -1808,6 +1878,7 @@ const Panel = {
       btn.style.marginTop = '14px';
       btn.addEventListener('click', () => {
         this.confirmingReset = true;
+        this.pendingBackup = null;
         this.render();
       });
       sec.append(btn);

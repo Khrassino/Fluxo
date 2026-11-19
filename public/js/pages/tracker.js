@@ -1006,14 +1006,16 @@ const TrackerPage = {
     return fmt.format(x.d) + ' · ' + formatted;
   },
 
-  exportData() {
+  async exportData() {
     try {
-      const payload = {
-        app: 'Fluxo',
-        version: 1,
-        exportedAt: new Date().toISOString(),
-        state: Store.state
-      };
+      const payload = typeof AppBackup !== 'undefined'
+        ? await AppBackup.collect()
+        : {
+            app: 'Fluxo',
+            version: 1,
+            exportedAt: new Date().toISOString(),
+            state: Store.state
+          };
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');

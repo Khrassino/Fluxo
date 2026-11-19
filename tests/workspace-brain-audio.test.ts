@@ -846,6 +846,288 @@ test('Motion.stepAmbientRipples spawns waves slightly more frequently without ov
   assert.ok(count >= 1 && count <= 12, 'expected spawned ripples within expected bounds, got ' + count);
 });
 
+test('AppBackup serializes binary ArrayBuffer to base64 and round-trips losslessly', () => {
+  const ctx = loadBrainAndAudioContext();
+  const out = JSON.parse(vm.runInContext(`(() => {
+    const raw = new Uint8Array([37, 80, 68, 70, 45, 49, 46, 55, 0, 255, 128, 64, 13, 10]);
+    const ab = raw.buffer.slice(0);
+    const enc = encodeBackupValue(ab);
+    const dec = decodeBackupValue(enc);
+    const decBytes = Array.from(new Uint8Array(dec));
+    const dataUrl = 'data:audio/mpeg;base64,SUQzAw==';
+    const decDataUrl = decodeBackupValue(encodeBackupValue(dataUrl));
+
+    const payload = buildFullBackupPayload({
+      exportedAt: '2026-11-19T12:00:00.000Z',
+      state: { v: 1, lang: 'pt' },
+      wsMeta: { ws_index: { items: [{ id: 'ws_default', name: 'Principal' }] } },
+      wsFiles: { pdf_1: ab, img_1: 'data:image/png;base64,iVBORw0KGgo=' },
+      wsLocalStorage: { 'fluxo-ws-board': '{"cards":[]}' },
+      fileIdb: { customMusic: dataUrl, customWallpaper: 'data:image/jpeg;base64,/9j/' },
+      fileLocalStorage: { 'fluxo-file-note': 'ok' }
+    });
+
+    return JSON.stringify({
+      encType: enc.__fluxoType,
+      isEncB64String: typeof enc.base64 === 'string' && enc.base64.length > 0,
+      isDecAb: dec instanceof ArrayBuffer,
+      origBytes: Array.from(raw),
+      decBytes,
+      decDataUrl,
+      payload
+    });
+  })()`, ctx));
+
+  assert.equal(out.encType, 'arraybuffer');
+  assert.equal(out.isEncB64String, true);
+  assert.equal(out.isDecAb, true);
+  assert.deepEqual(out.decBytes, out.origBytes);
+  assert.equal(out.decDataUrl, 'data:audio/mpeg;base64,SUQzAw==');
+
+  assert.equal(out.payload.app, 'Fluxo');
+  assert.equal(out.payload.version, 2);
+  assert.equal(out.payload.exportedAt, '2026-11-19T12:00:00.000Z');
+  assert.deepEqual(out.payload.state, { v: 1, lang: 'pt' });
+  assert.equal(out.payload.workspace.files.pdf_1.__fluxoType, 'arraybuffer');
+  assert.equal(out.payload.workspace.files.img_1, 'data:image/png;base64,iVBORw0KGgo=');
+  assert.equal(out.payload.workspace.localStorage['fluxo-ws-board'], '{"cards":[]}');
+  assert.equal(out.payload.files.idb.customMusic, 'data:audio/mpeg;base64,SUQzAw==');
+  assert.equal(out.payload.files.localStorage['fluxo-file-note'], 'ok');
+});
+
+test('parseAndValidateBackup accepts full & legacy backups and rejects invalid or foreign JSON', () => {
+  const ctx = loadBrainAndAudioContext();
+  const out = JSON.parse(vm.runInContext(`(() => {
+    const validFull = parseAndValidateBackup(JSON.stringify({
+      app: 'Fluxo',
+      version: 2,
+      exportedAt: '2026-11-19T12:00:00.000Z',
+      state: { v: 1, lang: 'en' },
+      workspace: { meta: {}, files: {}, localStorage: {} },
+      files: { idb: {}, localStorage: {} }
+    }));
+
+    const validLegacy = parseAndValidateBackup(JSON.stringify({
+      app: 'Fluxo',
+      version: 1,
+      exportedAt: '2026-11-18T10:00:00.000Z',
+      state: { v: 1, lang: 'pt', tasks: { items: [{ id: 't1', text: 'Estudar' }] } }
+    }));
+
+    const badJson = parseAndValidateBackup('{not json');
+    const wrongApp = parseAndValidateBackup(JSON.stringify({ app: 'OtherApp', state: {} }));
+    const emptyFluxo = parseAndValidateBackup(JSON.stringify({ app: 'Fluxo', version: 1 }));
+    const arrayRoot = parseAndValidateBackup('[1, 2, 3]');
+
+    return JSON.stringify({ validFull, validLegacy, badJson, wrongApp, emptyFluxo, arrayRoot });
+  })()`, ctx));
+
+  assert.equal(out.validFull.ok, true);
+  assert.equal(out.validFull.isLegacyStateOnly, false);
+
+  assert.equal(out.validLegacy.ok, true);
+  assert.equal(out.validLegacy.isLegacyStateOnly, true);
+  assert.equal(out.validLegacy.state.lang, 'pt');
+
+  assert.equal(out.badJson.ok, false);
+  assert.equal(out.badJson.errorKey, 'panel.general.importInvalid');
+
+  assert.equal(out.wrongApp.ok, false);
+  assert.equal(out.wrongApp.errorKey, 'panel.general.importNotFluxo');
+
+  assert.equal(out.emptyFluxo.ok, false);
+  assert.equal(out.emptyFluxo.errorKey, 'panel.general.importInvalid');
+
+  assert.equal(out.arrayRoot.ok, false);
+  assert.equal(out.arrayRoot.errorKey, 'panel.general.importInvalid');
+});
+
+test('AppBackup.collect & AppBackup.restore handle full restore, legacy state-only restore, and Store._restoring guard', async () => {
+  const ctx = loadBrainAndAudioContext();
+  const outJson = await vm.runInContext(`(async () => {
+    // In-memory localStorage mock
+    const lsMap = new Map();
+    localStorage.getItem = (k) => (lsMap.has(k) ? lsMap.get(k) : null);
+    localStorage.setItem = (k, v) => { lsMap.set(String(k), String(v)); };
+    localStorage.removeItem = (k) => { lsMap.delete(String(k)); };
+    Object.defineProperty(localStorage, 'length', { get: () => lsMap.size, configurable: true });
+    localStorage.key = (i) => Array.from(lsMap.keys())[i] ?? null;
+
+    // In-memory IndexedDB mock supporting stores ['meta', 'files'] and openCursor()
+    const dbs = {
+      'fluxo-workspace': { meta: new Map(), files: new Map() },
+      'fluxo-files': { files: new Map() }
+    };
+    function makeDbHandle(name) {
+      const stores = dbs[name];
+      return {
+        objectStoreNames: { contains: (s) => Object.prototype.hasOwnProperty.call(stores, s) },
+        transaction(storeName) {
+          const tx = {
+            oncomplete: null,
+            onerror: null,
+            onabort: null,
+            objectStore(sn) {
+              const map = stores[sn || storeName];
+              return {
+                clear() { map.clear(); },
+                put(val, key) { map.set(String(key), val); },
+                get(key) {
+                  const rq = { result: map.get(String(key)), onsuccess: null, onerror: null };
+                  setTimeout(() => rq.onsuccess && rq.onsuccess({ target: rq }), 0);
+                  return rq;
+                },
+                delete(key) { map.delete(String(key)); },
+                openCursor() {
+                  const entries = Array.from(map.entries());
+                  let idx = 0;
+                  const rq = { result: null, onsuccess: null, onerror: null };
+                  const step = () => {
+                    if (idx < entries.length) {
+                      const [k, v] = entries[idx++];
+                      rq.result = { key: k, value: v, continue: () => setTimeout(step, 0) };
+                    } else {
+                      rq.result = null;
+                    }
+                    if (rq.onsuccess) rq.onsuccess({ target: rq });
+                  };
+                  setTimeout(step, 0);
+                  return rq;
+                }
+              };
+            }
+          };
+          setTimeout(() => tx.oncomplete && tx.oncomplete(), 5);
+          return tx;
+        }
+      };
+    }
+    indexedDB.open = (name) => {
+      const rq = { result: null, onupgradeneeded: null, onsuccess: null, onerror: null };
+      setTimeout(() => {
+        rq.result = makeDbHandle(name);
+        if (rq.onsuccess) rq.onsuccess();
+      }, 0);
+      return rq;
+    };
+    Files.db = null;
+    WorkspaceDB.db = null;
+    WorkspaceDB.opening = null;
+
+    // Seed original full state
+    Store.state = { v: 1, lang: 'pt', note: 'original' };
+    Store._restoring = false;
+    Store.save();
+    localStorage.setItem('fluxo-ws-legacy', '{"ok":1}');
+    localStorage.setItem('fluxo-file-legacy', 'data:text/plain;base64,QQ==');
+    dbs['fluxo-workspace'].meta.set('board_ws_default', { cards: [{ id: 'c1' }] });
+    dbs['fluxo-workspace'].files.set('pdf_a', new Uint8Array([1, 2, 3, 4]).buffer);
+    dbs['fluxo-files'].files.set('customMusic', 'data:audio/mp3;base64,AAAA');
+
+    const exported = await AppBackup.collect();
+
+    // Mutate everything to different data (including stale keys that should be removed on full restore)
+    Store.state = { v: 1, lang: 'en', note: 'dirty' };
+    Store.save();
+    localStorage.setItem('fluxo-ws-stale', 'remove-me');
+    localStorage.setItem('fluxo-file-stale', 'remove-me');
+    dbs['fluxo-workspace'].meta.set('board_ws_default', { cards: [] });
+    dbs['fluxo-workspace'].files.clear();
+    dbs['fluxo-files'].files.set('customWallpaper', 'stale-wp');
+
+    // 1) Legacy state-only restore must update state only and keep workspace/files intact
+    const legacyParsed = parseAndValidateBackup(JSON.stringify({
+      app: 'Fluxo',
+      version: 1,
+      exportedAt: '2026-11-18T00:00:00.000Z',
+      state: { v: 1, lang: 'pt', note: 'from-legacy' }
+    }));
+    await AppBackup.restore(legacyParsed);
+    // Simulate Store.save() called during beforeunload; must be ignored while _restoring === true
+    Store.state.note = 'clobber-attempt';
+    Store.save();
+    const afterLegacyState = JSON.parse(localStorage.getItem('fluxo-state-v1'));
+    const wsStillPresentAfterLegacy = localStorage.getItem('fluxo-ws-stale');
+    const wpStillPresentAfterLegacy = dbs['fluxo-files'].files.get('customWallpaper');
+
+    // 2) Full restore replaces state, workspace (IDB + localStorage), and files (IDB + localStorage)
+    const fullParsed = parseAndValidateBackup(JSON.stringify(exported));
+    await AppBackup.restore(fullParsed);
+    const afterFullState = JSON.parse(localStorage.getItem('fluxo-state-v1'));
+    const restoredPdf = dbs['fluxo-workspace'].files.get('pdf_a');
+
+    return JSON.stringify({
+      exportedHasApp: exported.app,
+      exportedHasWsFiles: !!exported.workspace.files.pdf_a,
+      afterLegacyState,
+      wsStillPresentAfterLegacy,
+      wpStillPresentAfterLegacy,
+      afterFullState,
+      staleWsAfterFull: localStorage.getItem('fluxo-ws-stale'),
+      staleFileAfterFull: localStorage.getItem('fluxo-file-stale'),
+      restoredWsLegacyLs: localStorage.getItem('fluxo-ws-legacy'),
+      restoredFileLegacyLs: localStorage.getItem('fluxo-file-legacy'),
+      restoredBoard: dbs['fluxo-workspace'].meta.get('board_ws_default'),
+      restoredPdfBytes: restoredPdf ? Array.from(new Uint8Array(restoredPdf)) : null,
+      restoredMusic: dbs['fluxo-files'].files.get('customMusic'),
+      staleWpAfterFull: dbs['fluxo-files'].files.get('customWallpaper') ?? null
+    });
+  })()`, ctx);
+
+  const out = JSON.parse(outJson);
+  assert.equal(out.exportedHasApp, 'Fluxo');
+  assert.equal(out.exportedHasWsFiles, true);
+
+  assert.equal(out.afterLegacyState.note, 'from-legacy');
+  assert.equal(out.wsStillPresentAfterLegacy, 'remove-me');
+  assert.equal(out.wpStillPresentAfterLegacy, 'stale-wp');
+
+  assert.equal(out.afterFullState.note, 'original');
+  assert.equal(out.staleWsAfterFull, null);
+  assert.equal(out.staleFileAfterFull, null);
+  assert.equal(out.restoredWsLegacyLs, '{"ok":1}');
+  assert.equal(out.restoredFileLegacyLs, 'data:text/plain;base64,QQ==');
+  assert.deepEqual(out.restoredBoard, { cards: [{ id: 'c1' }] });
+  assert.deepEqual(out.restoredPdfBytes, [1, 2, 3, 4]);
+  assert.equal(out.restoredMusic, 'data:audio/mp3;base64,AAAA');
+  assert.equal(out.staleWpAfterFull, null);
+});
+
+test('i18n includes PT and EN translations for backup import and confirmation', () => {
+  const ctx = loadBrainAndAudioContext();
+  const out = JSON.parse(vm.runInContext(`(() => {
+    Store.load();
+    I18n.setLang('pt');
+    const pt = {
+      imp: tr('panel.general.import'),
+      confirm: tr('panel.general.importConfirm', '', { file: 'b.json' }),
+      notFluxo: tr('panel.general.importNotFluxo'),
+      invalid: tr('panel.general.importInvalid')
+    };
+    I18n.setLang('en');
+    const en = {
+      imp: tr('panel.general.import'),
+      confirm: tr('panel.general.importConfirm', '', { file: 'b.json' }),
+      notFluxo: tr('panel.general.importNotFluxo'),
+      invalid: tr('panel.general.importInvalid')
+    };
+    return JSON.stringify({ pt, en });
+  })()`, ctx));
+
+  assert.equal(out.pt.imp, 'Importar backup');
+  assert.ok(out.pt.confirm.includes('substitui os dados atuais'));
+  assert.ok(out.pt.confirm.includes('b.json'));
+  assert.ok(out.pt.notFluxo.includes('Fluxo'));
+  assert.ok(out.pt.invalid.includes('JSON'));
+
+  assert.equal(out.en.imp, 'Import backup');
+  assert.ok(out.en.confirm.includes('replaces current data'));
+  assert.ok(out.en.confirm.includes('b.json'));
+  assert.ok(out.en.notFluxo.includes('Fluxo'));
+  assert.ok(out.en.invalid.includes('JSON'));
+});
+
+
 
 
 

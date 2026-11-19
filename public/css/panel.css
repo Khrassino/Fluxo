@@ -168,6 +168,14 @@ body.panel-open #panel-backdrop { opacity: 1; pointer-events: auto; }
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
   margin-top: 12px;
 }
+.panel-actions .chip {
+  display: inline-flex; align-items: center;
+}
+.panel-actions .chip.is-primary {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
 .panel-hint-box {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   margin-top: 10px; padding: 9px 12px; border-radius: 10px;

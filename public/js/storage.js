@@ -263,7 +263,10 @@ const Store = {
     return this.state;
   },
 
+  _restoring: false,
+
   save() {
+    if (this._restoring) return;
     try { localStorage.setItem(STORE_KEY, JSON.stringify(this.state)); }
     catch (e) {
       const msg = typeof tr === 'function' ? tr('storage.saveErr', 'Não foi possível salvar as configurações') : 'Não foi possível salvar as configurações';
@@ -361,3 +364,402 @@ function readFileAsDataURL(file) {
     r.readAsDataURL(file);
   });
 }
+
+/* ============ backup completo (estado + área de trabalho + arquivos) ============ */
+function backupIsPlainObject(v) {
+  return !!v && typeof v === 'object' && !Array.isArray(v) && !(v instanceof ArrayBuffer) && !ArrayBuffer.isView(v);
+}
+
+function backupArrayBufferToBase64(buf) {
+  if (!buf) return '';
+  let bytes;
+  if (buf instanceof ArrayBuffer) {
+    bytes = new Uint8Array(buf);
+  } else if (ArrayBuffer.isView(buf)) {
+    bytes = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+  } else {
+    return '';
+  }
+  if (typeof btoa !== 'function') {
+    if (typeof Buffer !== 'undefined') return Buffer.from(bytes).toString('base64');
+    return '';
+  }
+  const chunk = 0x8000;
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(bin);
+}
+
+function backupBase64ToArrayBuffer(b64) {
+  const clean = String(b64 || '').trim();
+  if (!clean) return new ArrayBuffer(0);
+  if (typeof atob !== 'function') {
+    if (typeof Buffer !== 'undefined') {
+      const buf = Buffer.from(clean, 'base64');
+      return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+    }
+    return new ArrayBuffer(0);
+  }
+  const bin = atob(clean);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out.buffer;
+}
+
+function encodeBackupValue(val) {
+  if (val instanceof ArrayBuffer || ArrayBuffer.isView(val)) {
+    return { __fluxoType: 'arraybuffer', base64: backupArrayBufferToBase64(val) };
+  }
+  return val;
+}
+
+async function encodeBackupValueAsync(val) {
+  if (val instanceof ArrayBuffer || ArrayBuffer.isView(val)) {
+    return { __fluxoType: 'arraybuffer', base64: backupArrayBufferToBase64(val) };
+  }
+  if (typeof Blob !== 'undefined' && val instanceof Blob) {
+    const ab = await val.arrayBuffer();
+    return { __fluxoType: 'blob', type: val.type || '', base64: backupArrayBufferToBase64(ab) };
+  }
+  return val;
+}
+
+function decodeBackupValue(val) {
+  if (val && typeof val === 'object' && !Array.isArray(val)) {
+    if (val.__fluxoType === 'arraybuffer' && typeof val.base64 === 'string') {
+      return backupBase64ToArrayBuffer(val.base64);
+    }
+    if (val.__fluxoType === 'blob' && typeof val.base64 === 'string') {
+      const ab = backupBase64ToArrayBuffer(val.base64);
+      return typeof Blob !== 'undefined' ? new Blob([ab], { type: val.type || '' }) : ab;
+    }
+  }
+  return val;
+}
+
+function encodeBackupMap(obj) {
+  const out = {};
+  if (!backupIsPlainObject(obj)) return out;
+  for (const [k, v] of Object.entries(obj)) {
+    out[k] = encodeBackupValue(v);
+  }
+  return out;
+}
+
+async function encodeBackupMapAsync(obj) {
+  const out = {};
+  if (!backupIsPlainObject(obj)) return out;
+  for (const [k, v] of Object.entries(obj)) {
+    out[k] = await encodeBackupValueAsync(v);
+  }
+  return out;
+}
+
+function buildFullBackupPayload(parts) {
+  const p = parts || {};
+  return {
+    app: 'Fluxo',
+    version: 2,
+    exportedAt: p.exportedAt || new Date().toISOString(),
+    state: p.state !== undefined ? p.state : null,
+    workspace: {
+      meta: backupIsPlainObject(p.wsMeta) ? p.wsMeta : {},
+      files: encodeBackupMap(p.wsFiles),
+      localStorage: backupIsPlainObject(p.wsLocalStorage) ? p.wsLocalStorage : {}
+    },
+    files: {
+      idb: encodeBackupMap(p.fileIdb),
+      localStorage: backupIsPlainObject(p.fileLocalStorage) ? p.fileLocalStorage : {}
+    }
+  };
+}
+
+function parseAndValidateBackup(rawTextOrObj) {
+  let obj = rawTextOrObj;
+  if (typeof rawTextOrObj === 'string') {
+    try {
+      obj = JSON.parse(rawTextOrObj);
+    } catch (e) {
+      return { ok: false, errorKey: 'panel.general.importInvalid' };
+    }
+  }
+  if (!backupIsPlainObject(obj)) {
+    return { ok: false, errorKey: 'panel.general.importInvalid' };
+  }
+  if (obj.app !== 'Fluxo') {
+    return { ok: false, errorKey: 'panel.general.importNotFluxo' };
+  }
+
+  const hasState = obj.state !== undefined;
+  const hasWorkspace = obj.workspace !== undefined;
+  const hasFiles = obj.files !== undefined;
+  if (!hasState && !hasWorkspace && !hasFiles) {
+    return { ok: false, errorKey: 'panel.general.importInvalid' };
+  }
+  if (hasState && !backupIsPlainObject(obj.state)) {
+    return { ok: false, errorKey: 'panel.general.importInvalid' };
+  }
+  if (hasWorkspace && !backupIsPlainObject(obj.workspace)) {
+    return { ok: false, errorKey: 'panel.general.importInvalid' };
+  }
+  if (hasFiles && !backupIsPlainObject(obj.files)) {
+    return { ok: false, errorKey: 'panel.general.importInvalid' };
+  }
+
+  let ws = null;
+  if (hasWorkspace) {
+    const w = obj.workspace;
+    if ((w.meta !== undefined && !backupIsPlainObject(w.meta)) ||
+        (w.files !== undefined && !backupIsPlainObject(w.files)) ||
+        (w.localStorage !== undefined && !backupIsPlainObject(w.localStorage))) {
+      return { ok: false, errorKey: 'panel.general.importInvalid' };
+    }
+    ws = {
+      meta: w.meta || {},
+      files: w.files || {},
+      localStorage: w.localStorage || {}
+    };
+  }
+
+  let files = null;
+  if (hasFiles) {
+    const f = obj.files;
+    if ((f.idb !== undefined && !backupIsPlainObject(f.idb)) ||
+        (f.localStorage !== undefined && !backupIsPlainObject(f.localStorage))) {
+      return { ok: false, errorKey: 'panel.general.importInvalid' };
+    }
+    files = {
+      idb: f.idb || {},
+      localStorage: f.localStorage || {}
+    };
+  }
+
+  const isLegacyStateOnly = hasState && !hasWorkspace && !hasFiles;
+  return {
+    ok: true,
+    isLegacyStateOnly,
+    version: Number(obj.version) || 1,
+    exportedAt: typeof obj.exportedAt === 'string' ? obj.exportedAt : null,
+    state: hasState ? obj.state : null,
+    workspace: ws,
+    files
+  };
+}
+
+function backupOpenIdb(name, onUpgrade) {
+  return new Promise((resolve) => {
+    let req;
+    try {
+      req = indexedDB.open(name, 1);
+    } catch (e) { return resolve(null); }
+    if (!req) return resolve(null);
+    let settled = false;
+    const finish = (db) => {
+      if (settled) return;
+      settled = true;
+      resolve(db);
+    };
+    req.onupgradeneeded = () => {
+      if (typeof onUpgrade === 'function') onUpgrade(req.result);
+    };
+    req.onsuccess = () => finish(req.result);
+    req.onerror = () => finish(null);
+    setTimeout(() => finish(null), 1800);
+  });
+}
+
+function backupDumpStore(db, storeName) {
+  if (!db || !db.objectStoreNames || !db.objectStoreNames.contains(storeName)) {
+    return Promise.resolve({});
+  }
+  return new Promise((resolve) => {
+    try {
+      const out = {};
+      const tx = db.transaction(storeName, 'readonly');
+      const rq = tx.objectStore(storeName).openCursor();
+      rq.onsuccess = (ev) => {
+        const cur = ev.target && ev.target.result;
+        if (cur) {
+          out[String(cur.key)] = cur.value;
+          cur.continue();
+        } else {
+          resolve(out);
+        }
+      };
+      rq.onerror = () => resolve(out);
+    } catch (e) { resolve({}); }
+  });
+}
+
+function backupReplaceStore(db, storeName, entriesObj, transformVal) {
+  if (!db || !db.objectStoreNames || !db.objectStoreNames.contains(storeName)) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    try {
+      const tx = db.transaction(storeName, 'readwrite');
+      const store = tx.objectStore(storeName);
+      store.clear();
+      if (backupIsPlainObject(entriesObj)) {
+        for (const [k, v] of Object.entries(entriesObj)) {
+          const val = transformVal ? transformVal(v) : v;
+          if (val !== undefined) store.put(val, k);
+        }
+      }
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error || new Error('idb'));
+      tx.onabort = () => reject(tx.error || new Error('idb-abort'));
+    } catch (e) { reject(e); }
+  });
+}
+
+function backupCollectLocalStorageByPrefix(prefix) {
+  const out = {};
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(prefix)) {
+        const v = localStorage.getItem(k);
+        if (v !== null) out[k] = v;
+      }
+    }
+  } catch (e) { /* ignora */ }
+  return out;
+}
+
+function backupReplaceLocalStorageByPrefix(prefix, entriesObj) {
+  try {
+    const toRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(prefix)) toRemove.push(k);
+    }
+    toRemove.forEach(k => localStorage.removeItem(k));
+    if (backupIsPlainObject(entriesObj)) {
+      for (const [k, v] of Object.entries(entriesObj)) {
+        if (k.startsWith(prefix) && typeof v === 'string') {
+          localStorage.setItem(k, v);
+        }
+      }
+    }
+  } catch (e) { /* ignora */ }
+}
+
+const AppBackup = {
+  async collect() {
+    Store.save();
+    if (typeof Workspace !== 'undefined' && Workspace.loaded && typeof Workspace.flushSave === 'function') {
+      try { await Workspace.flushSave(); } catch (e) { /* ignora */ }
+    }
+
+    let state = Store.state;
+    try {
+      const raw = localStorage.getItem(STORE_KEY);
+      if (raw) state = JSON.parse(raw);
+    } catch (e) { /* usa Store.state */ }
+
+    if (!Files.db) await Files.init();
+    const filesDb = Files.db || await backupOpenIdb('fluxo-files', (db) => {
+      if (!db.objectStoreNames.contains('files')) db.createObjectStore('files');
+    });
+
+    const wsDb = typeof WorkspaceDB !== 'undefined'
+      ? await WorkspaceDB.open()
+      : await backupOpenIdb('fluxo-workspace', (db) => {
+          if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta');
+          if (!db.objectStoreNames.contains('files')) db.createObjectStore('files');
+        });
+
+    const [wsMeta, rawWsFiles, rawFileIdb] = await Promise.all([
+      backupDumpStore(wsDb, 'meta'),
+      backupDumpStore(wsDb, 'files'),
+      backupDumpStore(filesDb, 'files')
+    ]);
+
+    const [wsFiles, fileIdb] = await Promise.all([
+      encodeBackupMapAsync(rawWsFiles),
+      encodeBackupMapAsync(rawFileIdb)
+    ]);
+
+    const wsLocalStorage = backupCollectLocalStorageByPrefix('fluxo-ws-');
+    const fileLocalStorage = backupCollectLocalStorageByPrefix('fluxo-file-');
+
+    return buildFullBackupPayload({
+      state,
+      wsMeta,
+      wsFiles,
+      wsLocalStorage,
+      fileIdb,
+      fileLocalStorage
+    });
+  },
+
+  async restore(parsed) {
+    if (!parsed || !parsed.ok) throw new Error('invalid-backup');
+
+    if (parsed.isLegacyStateOnly) {
+      if (typeof Workspace !== 'undefined' && Workspace.loaded && typeof Workspace.flushSave === 'function') {
+        try { await Workspace.flushSave(); } catch (e) { /* ignora */ }
+      }
+      Store._restoring = true;
+      if (typeof Usage !== 'undefined') Usage.dirty = false;
+      try {
+        localStorage.setItem(STORE_KEY, JSON.stringify(parsed.state));
+      } catch (e) {
+        Store._restoring = false;
+        throw e;
+      }
+      return;
+    }
+
+    if (typeof Workspace !== 'undefined') {
+      clearTimeout(Workspace.saveTimer);
+      Workspace.saveTimer = null;
+      Workspace.loaded = false;
+    }
+    Store._restoring = true;
+    if (typeof Usage !== 'undefined') Usage.dirty = false;
+
+    try {
+      if (parsed.state) localStorage.setItem(STORE_KEY, JSON.stringify(parsed.state));
+      else localStorage.removeItem(STORE_KEY);
+
+      const wsData = parsed.workspace || { meta: {}, files: {}, localStorage: {} };
+      const fileData = parsed.files || { idb: {}, localStorage: {} };
+
+      backupReplaceLocalStorageByPrefix('fluxo-ws-', wsData.localStorage);
+      backupReplaceLocalStorageByPrefix('fluxo-file-', fileData.localStorage);
+
+      const wsDb = typeof WorkspaceDB !== 'undefined'
+        ? await WorkspaceDB.open()
+        : await backupOpenIdb('fluxo-workspace', (db) => {
+            if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta');
+            if (!db.objectStoreNames.contains('files')) db.createObjectStore('files');
+          });
+      if (wsDb) {
+        await backupReplaceStore(wsDb, 'meta', wsData.meta || {});
+        await backupReplaceStore(wsDb, 'files', wsData.files || {}, decodeBackupValue);
+      }
+
+      if (!Files.db) await Files.init();
+      const filesDb = Files.db || await backupOpenIdb('fluxo-files', (db) => {
+        if (!db.objectStoreNames.contains('files')) db.createObjectStore('files');
+      });
+      if (filesDb) {
+        await backupReplaceStore(filesDb, 'files', fileData.idb || {}, decodeBackupValue);
+      } else if (backupIsPlainObject(fileData.idb)) {
+        for (const [k, v] of Object.entries(fileData.idb)) {
+          const decoded = decodeBackupValue(v);
+          if (typeof decoded === 'string') {
+            try { localStorage.setItem('fluxo-file-' + k, decoded); } catch (e) { /* ignora */ }
+          }
+        }
+      }
+    } catch (e) {
+      Store._restoring = false;
+      throw e;
+    }
+  }
+};
