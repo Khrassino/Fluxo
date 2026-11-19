@@ -1,0 +1,63 @@
+{
+  "name": "fluxo-desktop",
+  "productName": "Fluxo",
+  "version": "1.0.0",
+  "description": "Fluxo — produtividade minimalista (versão para Windows)",
+  "author": "Khrassino",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "prepare-web": "node scripts/prepare-web.js",
+    "start": "npm run prepare-web && electron .",
+    "dev": "npm run prepare-web && electron . --dev",
+    "dist": "npm run prepare-web && electron-builder --win --x64",
+    "dist:dir": "npm run prepare-web && electron-builder --win --x64 --dir",
+    "smoke": "npm run prepare-web && node scripts/smoke-run.js"
+  },
+  "devDependencies": {
+    "electron": "^45.4.1",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "com.khrassino.fluxo",
+    "productName": "Fluxo",
+    "copyright": "Fluxo",
+    "asar": false,
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "package.json",
+      "web/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Fluxo",
+      "deleteAppDataOnUninstall": false,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
+    },
+    "artifactName": "Fluxo-Setup-${version}.${ext}",
+    "electronLanguages": [
+      "pt-BR",
+      "en-US"
+    ]
+  }
+}
