@@ -1,76 +1,76 @@
 # Fluxo
 
-Um espaço de produtividade minimalista, personalizável e leve. O Fluxo reúne ferramentas de foco, organização e acompanhamento em uma interface que você pode adaptar ao seu jeito de trabalhar.
+A lightweight, customizable, minimalist productivity space. Fluxo brings focus, organization, and progress-tracking tools together in an interface you can adapt to the way you work.
 
-O projeto possui uma versão web e um aplicativo para Windows, construído com Electron.
+The project is available as a web app and a Windows desktop app built with Electron.
 
-## Experimente no navegador
+## Try Fluxo in your browser
 
-**[Abrir o Fluxo](https://fluxo-phi-eosin.vercel.app/)** — use a versão web diretamente no navegador, sem instalação.
+**[Open Fluxo](https://fluxo-phi-eosin.vercel.app/)** — use the web version directly in your browser, with no installation required.
 
 ## Downloads
 
-**[Baixar a versão mais recente em Releases](https://github.com/Khrassino/Fluxo/releases/latest)**
+**[Download the latest release](https://github.com/Khrassino/Fluxo/releases/latest)**
 
-Na página de Releases, baixe o instalador do Windows:
+On the Releases page, download the Windows installer:
 
-`Fluxo-Setup-<versão>.exe`
+`Fluxo-Setup-<version>.exe`
 
-O aplicativo desktop é distribuído para **Windows 64 bits (x64)**.
+The desktop app is currently distributed for **64-bit Windows (x64)**.
 
-## Recursos
+## Features
 
-- **Início:** relógio, saudação, atalhos personalizáveis e citações.
-- **Cronômetro:** temporizador Pomodoro, cronômetro progressivo e aparência ajustável.
-- **Progresso:** estatísticas, metas diárias e gráficos para acompanhar o uso e as sessões de foco.
-- **Tarefas:** criação, edição, filtros, prioridades, prazos e organização.
-- **Área de Trabalho:** quadro infinito com cartões de texto, conexões, escrita e desenho, imagens e PDFs.
-- **Personalização:** temas, cores, fontes, efeitos visuais, sons e opções de comportamento.
-- **Citações:** biblioteca interna, textos adicionados pelo usuário e fonte externa opcional.
-- **Backup:** exportação e importação dos dados, incluindo o conteúdo da Área de Trabalho e arquivos armazenados.
+- **Home:** clock, greeting, customizable shortcuts, and quotes.
+- **Timer:** Pomodoro timer, stopwatch, and adjustable appearance.
+- **Progress:** statistics, daily goals, and charts to track app usage and focus sessions.
+- **Tasks:** create and edit tasks, filter them, set priorities and due dates, and stay organized.
+- **Workspace:** an infinite canvas with text cards, connections, writing and drawing tools, images, and PDFs.
+- **Customization:** themes, colors, fonts, visual effects, sounds, and behavior settings.
+- **Quotes:** built-in library, user-added quotes, and an optional external source.
+- **Backups:** export and import app data, including Workspace content and stored files.
 
-A interface está disponível em português e inglês.
+The interface is available in Portuguese and English.
 
-## Instalação no Windows
+## Installing on Windows
 
-1. Abra a página de [Releases](https://github.com/Khrassino/Fluxo/releases/latest).
-2. Baixe o arquivo `Fluxo-Setup-<versão>.exe`.
-3. Execute o instalador e escolha a pasta de destino.
-4. Ao terminar, abra o Fluxo pelo atalho criado na área de trabalho ou pelo menu Iniciar.
+1. Open the [Releases](https://github.com/Khrassino/Fluxo/releases/latest) page.
+2. Download `Fluxo-Setup-<version>.exe`.
+3. Run the installer and choose the installation folder.
+4. Once installation is complete, launch Fluxo from the desktop shortcut or the Start menu.
 
-> **Aviso do Windows:** o instalador não possui assinatura digital. Por isso, o SmartScreen pode exibir um aviso ao executá-lo. Isso não significa, por si só, que o arquivo seja malicioso; verifique sempre se o download veio da página oficial de Releases do projeto.
+> **Windows security notice:** The installer is not digitally signed, so Windows SmartScreen may show a warning when you run it. This warning does not, by itself, mean the file is malicious. Always make sure you downloaded it from the project's official Releases page.
 
-## Seus dados e backups
+## Your data and backups
 
-O Fluxo armazena as configurações, tarefas, estatísticas e conteúdo de trabalho localmente no dispositivo.
+Fluxo stores settings, tasks, statistics, and workspace content locally on your device.
 
-A versão web e a versão desktop mantêm armazenamentos separados. Para transferir seus dados entre elas ou entre computadores:
+The web and desktop versions use separate storage. To transfer your data between them or between computers:
 
-1. Abra **Configurações → Geral → Exportar dados** na instalação de origem.
-2. Guarde o arquivo JSON gerado.
-3. Na instalação de destino, use a opção **Importar backup**.
+1. In the source installation, open **Settings → General → Export data**.
+2. Save the generated JSON file.
+3. In the destination installation, use **Import backup**.
 
-O backup inclui o estado do aplicativo, os quadros da Área de Trabalho e os arquivos associados. Guarde uma cópia do arquivo em um local seguro, especialmente antes de atualizar ou trocar de dispositivo.
+The backup includes the app state, Workspace boards, and associated files. Keep a copy of the backup in a safe place, especially before updating or moving to another device.
 
-Na versão desktop, os dados ficam no diretório de usuário do aplicativo do Windows. Desinstalar o Fluxo não remove esses dados; o instalador também está configurado para preservá-los durante a atualização.
+On Windows, the desktop app stores its data in the application's user data directory. Uninstalling Fluxo does not remove this data; the installer is also configured to preserve it during updates.
 
-## Privacidade e funcionamento offline
+## Privacy and offline use
 
-As informações pessoais e os dados de trabalho são armazenados localmente. A versão desktop não carrega os scripts de análise da Vercel usados na versão web.
+Personal information and work data are stored locally. The desktop version does not load the Vercel Analytics scripts used by the web version.
 
-Alguns recursos opcionais podem acessar serviços externos:
-- A fonte externa de citações consulta a API do DummyJSON quando ativada. Os resultados são armazenados em cache local por 24 horas.
-- As fontes tipográficas podem ser carregadas do Google Fonts; sem conexão, o aplicativo utiliza fontes de fallback do sistema.
+Some optional features may connect to external services:
+- When enabled, the external quotes source retrieves quotes from the DummyJSON API. Results are cached locally for 24 hours.
+- Fonts may be loaded from Google Fonts. Without an internet connection, the app uses system fallback fonts.
 
-As funções principais e os dados já salvos continuam disponíveis sem conexão. A obtenção de novas citações externas e o carregamento de fontes online dependem de internet.
+Core features and previously saved data remain available offline. Fetching new external quotes and loading online fonts require an internet connection.
 
-## Desenvolvimento
+## Development
 
-O aplicativo web utiliza HTML, CSS e JavaScript. O empacotamento para Windows fica na pasta `desktop/` e utiliza Electron e electron-builder.
+The web app is built with HTML, CSS, and JavaScript. The Windows desktop package is located in the `desktop/` directory and uses Electron and electron-builder.
 
-### Executar a versão desktop em modo de desenvolvimento
+### Run the desktop app in development mode
 
-É necessário ter o [Node.js LTS](https://nodejs.org/) instalado.
+You need [Node.js LTS](https://nodejs.org/) installed.
 
 ```bash
 cd desktop
@@ -78,28 +78,28 @@ npm install
 npm start
 ```
 
-### Gerar o instalador do Windows
+### Build the Windows installer
 
-Dentro da pasta `desktop/`, execute:
+From the `desktop/` directory, run:
 
 ```bash
 npm run dist
 ```
 
-O instalador será gerado em `desktop/dist/`, com o nome definido pela versão em `desktop/package.json`.
+The installer will be generated in `desktop/dist/`, with its filename based on the version in `desktop/package.json`.
 
-Para executar o teste automatizado do aplicativo desktop:
+To run the automated desktop app tests:
 
 ```bash
 npm run smoke
 ```
 
-### Estrutura principal
+### Main project structure
 
-- `index.html`: entrada da versão web.
-- `public/`: arquivos estáticos, scripts, estilos, fontes e recursos.
-- `desktop/`: processo principal do Electron, configuração do empacotamento e scripts de build/teste.
+- `index.html`: entry point for the web version.
+- `public/`: static files, scripts, stylesheets, fonts, and assets.
+- `desktop/`: Electron main process, packaging configuration, and build/test scripts.
 
-## Atualizações
+## Updates
 
-Consulte o [CHANGELOG](CHANGELOG.md) para ver as alterações de cada versão e a página de [Releases](https://github.com/Khrassino/Fluxo/releases) para baixar os instaladores disponíveis.
+See the [CHANGELOG](CHANGELOG.md) for changes in each version, and the [Releases](https://github.com/Khrassino/Fluxo/releases) page to download available installers.
