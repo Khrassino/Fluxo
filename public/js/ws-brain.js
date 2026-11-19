@@ -95,55 +95,480 @@ function wsNormalizeBgPattern(val) {
   return WS_BG_PATTERNS.includes(s) ? s : 'dots';
 }
 
-const WS_ARROW_CAPS = ['auto', 'none', 'arrow', 'circle', 'circle-open', 'square', 'square-open', 'diamond', 'bar'];
+const WS_ARROW_ROUTINGS = ['s-curve', 'straight', 'orthogonal', 'organic'];
+const WS_ARROW_LINE_STYLES = ['solid', 'dashed', 'dotted'];
+const WS_ARROW_WIDTHS = [1.5, 2, 2.5, 3, 4];
+const WS_ARROW_CAPS = ['auto', 'circle', 'square', 'diamond', 'bar', 'arrow', 'none', 'circle-open', 'square-open'];
+const WS_ARROW_CAP_SHAPES = ['circle', 'square', 'diamond', 'bar', 'arrow', 'none'];
 
 function wsNormalizeArrowCap(val) {
   const s = String(val || 'auto');
   return WS_ARROW_CAPS.includes(s) ? s : 'auto';
 }
 
-function wsArrowDefaultCaps(kind, dir) {
-  let startCap = 'none';
-  let endCap = 'arrow';
-  if (kind === 'supports') {
-    startCap = 'circle';
-    endCap = 'arrow';
-  } else if (kind === 'contrast') {
-    startCap = 'bar';
-    endCap = 'bar';
-  } else if (kind === 'sequence') {
-    startCap = 'circle-open';
-    endCap = 'arrow';
-  } else {
-    startCap = 'circle-open';
-    endCap = 'arrow';
-  }
-
-  if (dir === 'none') {
-    if (kind === 'supports') return { startCap: 'circle', endCap: 'square-open' };
-    if (kind === 'contrast') return { startCap: 'bar', endCap: 'bar' };
-    if (kind === 'sequence') return { startCap: 'circle', endCap: 'circle' };
-    return { startCap: 'none', endCap: 'none' };
-  }
-  if (dir === 'both') {
-    if (kind === 'supports') return { startCap: 'diamond', endCap: 'diamond' };
-    if (kind === 'contrast') return { startCap: 'bar', endCap: 'bar' };
-    return { startCap: 'arrow', endCap: 'arrow' };
-  }
-  return { startCap, endCap };
+function wsNormalizeArrowRouting(val, allowAuto) {
+  const s = String(val || (allowAuto ? 'auto' : 's-curve'));
+  if (allowAuto && s === 'auto') return 'auto';
+  return WS_ARROW_ROUTINGS.includes(s) ? s : (allowAuto ? 'auto' : 's-curve');
 }
 
-function wsResolveArrowCaps(arrow) {
-  const kind = (arrow && arrow.kind) || 'relates';
-  const dir = (arrow && arrow.dir) || 'forward';
-  const defs = wsArrowDefaultCaps(kind, dir);
-  const startCap = arrow && arrow.startCap && arrow.startCap !== 'auto'
-    ? wsNormalizeArrowCap(arrow.startCap)
-    : defs.startCap;
-  const endCap = arrow && arrow.endCap && arrow.endCap !== 'auto'
-    ? wsNormalizeArrowCap(arrow.endCap)
-    : defs.endCap;
-  return { startCap, endCap };
+function wsNormalizeArrowLineStyle(val, allowAuto) {
+  const s = String(val || (allowAuto ? 'auto' : 'solid'));
+  if (allowAuto && s === 'auto') return 'auto';
+  return WS_ARROW_LINE_STYLES.includes(s) ? s : (allowAuto ? 'auto' : 'solid');
+}
+
+function wsNormalizeArrowWidth(val, allowAuto) {
+  if (allowAuto && (val === '' || val == null || Number(val) === 0)) return 0;
+  const n = Number(val);
+  if (!Number.isFinite(n) || n <= 0) return allowAuto ? 0 : 1.8;
+  return clampNum(Math.round(n * 10) / 10, 1, 6);
+}
+
+function wsDefaultDirForKind(kind) {
+  return (kind === 'supports' || kind === 'sequence') ? 'forward' : 'none';
+}
+
+function wsDefaultLinkSettings() {
+  return {
+    routing: 's-curve',
+    types: {
+      relates:  { cap: 'circle',  lineStyle: 'solid', width: 1.8, color: '' },
+      contrast: { cap: 'square',  lineStyle: 'solid', width: 1.8, color: '' },
+      supports: { cap: 'diamond', lineStyle: 'solid', width: 1.8, color: '' },
+      sequence: { cap: 'arrow',   lineStyle: 'solid', width: 1.8, color: '' }
+    }
+  };
+}
+
+function wsNormalizeLinkDefaults(raw) {
+  const def = wsDefaultLinkSettings();
+  if (!raw || typeof raw !== 'object') return def;
+  const out = {
+    routing: wsNormalizeArrowRouting(raw.routing, false),
+    types: {}
+  };
+  const srcTypes = raw.types && typeof raw.types === 'object' ? raw.types : {};
+  ['relates', 'contrast', 'supports', 'sequence'].forEach((k) => {
+    const base = def.types[k];
+    const src = srcTypes[k] && typeof srcTypes[k] === 'object' ? srcTypes[k] : {};
+    let cap = k === 'sequence' ? 'arrow' : String(src.cap || base.cap);
+    if (!WS_ARROW_CAP_SHAPES.includes(cap)) cap = base.cap;
+    out.types[k] = {
+      cap,
+      lineStyle: wsNormalizeArrowLineStyle(src.lineStyle, false),
+      width: wsNormalizeArrowWidth(src.width, false),
+      color: /^#[0-9a-f]{3,8}$/i.test(String(src.color || '')) ? String(src.color) : ''
+    };
+  });
+  return out;
+}
+
+function wsDefaultShapeForKind(kind, linkDefaults) {
+  if (kind === 'sequence') return 'arrow';
+  const norm = linkDefaults ? wsNormalizeLinkDefaults(linkDefaults) : wsDefaultLinkSettings();
+  const cfg = norm.types[kind] || norm.types.relates;
+  return (cfg && cfg.cap) || (kind === 'contrast' ? 'square' : (kind === 'supports' ? 'diamond' : 'circle'));
+}
+
+function wsResolveEndPort(rawCap, defaultShape, side, dir) {
+  const cap = wsNormalizeArrowCap(rawCap);
+  const effectiveShape = cap === 'auto' ? defaultShape : cap;
+
+  if (effectiveShape === 'none') {
+    return { shape: 'none', mode: 'none', outsideOffset: 0, legacyCap: 'none' };
+  }
+  if (effectiveShape === 'arrow') {
+    if (cap === 'arrow') {
+      return { shape: 'arrow', mode: 'arrow', outsideOffset: 2, legacyCap: 'arrow' };
+    }
+    const active = dir === 'both' || (dir === 'forward' && side === 'end');
+    return active
+      ? { shape: 'arrow', mode: 'arrow', outsideOffset: 2, legacyCap: 'arrow' }
+      : { shape: 'none', mode: 'none', outsideOffset: 0, legacyCap: 'none' };
+  }
+  if (effectiveShape === 'bar') {
+    return { shape: 'bar', mode: 'bar', outsideOffset: 0, legacyCap: 'bar' };
+  }
+  if (effectiveShape === 'circle-open') {
+    return { shape: 'circle', mode: 'open', outsideOffset: 0, legacyCap: 'circle-open' };
+  }
+  if (effectiveShape === 'square-open') {
+    return { shape: 'square', mode: 'open', outsideOffset: 0, legacyCap: 'square-open' };
+  }
+  const hasCore = dir === 'both' || (dir === 'forward' && side === 'end');
+  const mode = hasCore ? 'core' : 'open';
+  const legacyCap = effectiveShape === 'circle'
+    ? (hasCore ? 'circle' : 'circle-open')
+    : (effectiveShape === 'square' ? (hasCore ? 'square' : 'square-open') : effectiveShape);
+  return { shape: effectiveShape, mode, outsideOffset: 0, legacyCap };
+}
+
+function wsResolveArrowEndpoints(arrow, linkDefaults) {
+  const kind = (arrow && WS_ARROW_KINDS.some(k => k.id === arrow.kind)) ? arrow.kind : 'relates';
+  const dir = (arrow && WS_ARROW_DIRS.some(d => d.id === arrow.dir)) ? arrow.dir : wsDefaultDirForKind(kind);
+  const defShape = wsDefaultShapeForKind(kind, linkDefaults);
+
+  if (kind === 'sequence') {
+    const startCap = arrow && arrow.startCap && arrow.startCap !== 'auto' ? arrow.startCap : 'auto';
+    const endCap = arrow && arrow.endCap && arrow.endCap !== 'auto' ? arrow.endCap : 'auto';
+    return {
+      start: wsResolveEndPort(startCap, 'arrow', 'start', dir),
+      end: wsResolveEndPort(endCap, 'arrow', 'end', dir)
+    };
+  }
+  return {
+    start: wsResolveEndPort(arrow && arrow.startCap, defShape, 'start', dir),
+    end: wsResolveEndPort(arrow && arrow.endCap, defShape, 'end', dir)
+  };
+}
+
+function wsResolveArrowCaps(arrow, linkDefaults) {
+  const res = wsResolveArrowEndpoints(arrow, linkDefaults);
+  return {
+    startCap: res.start.legacyCap,
+    endCap: res.end.legacyCap
+  };
+}
+
+function wsLineDashArray(lineStyle, width) {
+  const w = Math.max(1.2, Number(width) || 1.8);
+  if (lineStyle === 'dashed') return (w * 3.8).toFixed(1) + ' ' + (w * 2.6).toFixed(1);
+  if (lineStyle === 'dotted') return (w * 0.9).toFixed(1) + ' ' + (w * 2.5).toFixed(1);
+  return '';
+}
+
+function wsResolveArrowStyle(arrow, linkDefaults) {
+  const normDefs = linkDefaults ? wsNormalizeLinkDefaults(linkDefaults) : wsDefaultLinkSettings();
+  const kind = (arrow && WS_ARROW_KINDS.some(k => k.id === arrow.kind)) ? arrow.kind : 'relates';
+  const typeDef = normDefs.types[kind] || normDefs.types.relates;
+
+  const routing = (arrow && arrow.routing && arrow.routing !== 'auto')
+    ? wsNormalizeArrowRouting(arrow.routing, false)
+    : normDefs.routing;
+  const lineStyle = (arrow && arrow.lineStyle && arrow.lineStyle !== 'auto')
+    ? wsNormalizeArrowLineStyle(arrow.lineStyle, false)
+    : typeDef.lineStyle;
+  const width = (arrow && Number(arrow.width) > 0)
+    ? wsNormalizeArrowWidth(arrow.width, false)
+    : typeDef.width;
+  const color = (arrow && /^#[0-9a-f]{3,8}$/i.test(String(arrow.color || '')))
+    ? String(arrow.color)
+    : (typeDef.color || '');
+  const dashArray = wsLineDashArray(lineStyle, width);
+  return { routing, lineStyle, width, color, dashArray };
+}
+
+function wsArrowCardPairKey(aId, bId) {
+  const sa = String(aId || '');
+  const sb = String(bId || '');
+  return sa < sb ? (sa + '|' + sb) : (sb + '|' + sa);
+}
+
+function wsBuildArrowPairIndex(arrows) {
+  const map = new Map();
+  if (!Array.isArray(arrows)) return map;
+  for (let i = 0; i < arrows.length; i++) {
+    const a = arrows[i];
+    if (!a || !a.from || !a.to) continue;
+    const key = wsArrowCardPairKey(a.from, a.to);
+    let list = map.get(key);
+    if (!list) {
+      list = [];
+      map.set(key, list);
+    }
+    list.push(a);
+  }
+  return map;
+}
+
+function wsRayBoxEdge(rect, tx, ty, outwardOffset, originShiftX, originShiftY) {
+  const x = Number(rect && rect.x) || 0;
+  const y = Number(rect && rect.y) || 0;
+  const w = Math.max(1, Number(rect && rect.w) || 1);
+  const h = Math.max(1, Number(rect && rect.h) || 1);
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  const sx = clampNum(originShiftX || 0, -w * 0.32, w * 0.32);
+  const sy = clampNum(originShiftY || 0, -h * 0.32, h * 0.32);
+  const ox = cx + sx;
+  const oy = cy + sy;
+  const dx = tx - ox;
+  const dy = ty - oy;
+  if (!dx && !dy) return { x: ox, y: oy, nx: 1, ny: 0, side: 'right' };
+
+  const halfLeft = (ox - x);
+  const halfRight = (x + w - ox);
+  const halfTop = (oy - y);
+  const halfBot = (y + h - oy);
+  const txRatio = dx > 0 ? halfRight / dx : (dx < 0 ? halfLeft / -dx : Infinity);
+  const tyRatio = dy > 0 ? halfBot / dy : (dy < 0 ? halfTop / -dy : Infinity);
+  const tEdge = Math.min(txRatio, tyRatio);
+  const ex = ox + dx * tEdge;
+  const ey = oy + dy * tEdge;
+
+  let nx = 0, ny = 0, side = 'right';
+  if (txRatio <= tyRatio) {
+    nx = dx >= 0 ? 1 : -1;
+    side = nx > 0 ? 'right' : 'left';
+  } else {
+    ny = dy >= 0 ? 1 : -1;
+    side = ny > 0 ? 'bottom' : 'top';
+  }
+  const off = Number(outwardOffset) || 0;
+  const dLen = Math.hypot(dx, dy) || 1;
+  return {
+    x: ex + (dx / dLen) * off,
+    y: ey + (dy / dLen) * off,
+    nx,
+    ny,
+    side
+  };
+}
+
+function wsPickNearestSides(fromRect, toRect) {
+  const fcx = fromRect.x + fromRect.w / 2;
+  const fcy = fromRect.y + fromRect.h / 2;
+  const tcx = toRect.x + toRect.w / 2;
+  const tcy = toRect.y + toRect.h / 2;
+  const dx = tcx - fcx;
+  const dy = tcy - fcy;
+  const spanX = Math.max(1, (fromRect.w + toRect.w) * 0.5);
+  const spanY = Math.max(1, (fromRect.h + toRect.h) * 0.5);
+
+  if (Math.abs(dx) / spanX >= Math.abs(dy) / spanY) {
+    return dx >= 0
+      ? { fromSide: 'right', toSide: 'left' }
+      : { fromSide: 'left', toSide: 'right' };
+  }
+  return dy >= 0
+    ? { fromSide: 'bottom', toSide: 'top' }
+    : { fromSide: 'top', toSide: 'bottom' };
+}
+
+function wsSideMidpointAnchor(rect, side, laneOffset, outwardOffset) {
+  const x = Number(rect && rect.x) || 0;
+  const y = Number(rect && rect.y) || 0;
+  const w = Math.max(1, Number(rect && rect.w) || 1);
+  const h = Math.max(1, Number(rect && rect.h) || 1);
+  const padX = Math.min(14, w * 0.25);
+  const padY = Math.min(14, h * 0.25);
+  const lane = Number(laneOffset) || 0;
+  const off = Number(outwardOffset) || 0;
+
+  if (side === 'left') {
+    return {
+      x: x - off,
+      y: clampNum(y + h / 2 + lane, y + padY, y + h - padY),
+      nx: -1,
+      ny: 0,
+      side
+    };
+  }
+  if (side === 'right') {
+    return {
+      x: x + w + off,
+      y: clampNum(y + h / 2 + lane, y + padY, y + h - padY),
+      nx: 1,
+      ny: 0,
+      side
+    };
+  }
+  if (side === 'top') {
+    return {
+      x: clampNum(x + w / 2 + lane, x + padX, x + w - padX),
+      y: y - off,
+      nx: 0,
+      ny: -1,
+      side
+    };
+  }
+  return {
+    x: clampNum(x + w / 2 + lane, x + padX, x + w - padX),
+    y: y + h + off,
+    nx: 0,
+    ny: 1,
+    side: 'bottom'
+  };
+}
+
+function wsLabelAbovePos(mx, my, tx, ty) {
+  const tLen = Math.hypot(tx, ty) || 1;
+  const ux = tx / tLen;
+  const uy = ty / tLen;
+  let nx = -uy;
+  let ny = ux;
+  if (ny > 0) {
+    nx = -nx;
+    ny = -ny;
+  }
+  if (Math.abs(ny) < 0.28) {
+    return { lx: mx, ly: my - 13.5 };
+  }
+  return {
+    lx: mx + nx * 13.5,
+    ly: my + ny * 13.5
+  };
+}
+
+function wsBuildArrowGeometry(fromRect, toRect, opts) {
+  opts = opts || {};
+  const routing = wsNormalizeArrowRouting(opts.routing || 's-curve', false);
+  const lane = Number(opts.laneOffset) || 0;
+  const startOff = Number(opts.startOffset) || 0;
+  const endOff = Number(opts.endOffset) || 0;
+
+  const fc = { x: fromRect.x + fromRect.w / 2, y: fromRect.y + fromRect.h / 2 };
+  const tc = { x: toRect.x + toRect.w / 2, y: toRect.y + toRect.h / 2 };
+
+  if (routing === 'straight') {
+    const cdx = tc.x - fc.x;
+    const cdy = tc.y - fc.y;
+    const cDist = Math.hypot(cdx, cdy) || 1;
+    const cnx = -cdy / cDist;
+    const cny = cdx / cDist;
+    const shiftX = cnx * lane * 0.55;
+    const shiftY = cny * lane * 0.55;
+    const p1 = wsRayBoxEdge(fromRect, tc.x + shiftX, tc.y + shiftY, startOff, shiftX, shiftY);
+    const p2 = wsRayBoxEdge(toRect, fc.x + shiftX, fc.y + shiftY, endOff, shiftX, shiftY);
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    const mx = (p1.x + p2.x) / 2;
+    const my = (p1.y + p2.y) / 2;
+    const lpos = wsLabelAbovePos(mx, my, dx, dy);
+    return {
+      d: 'M' + p1.x.toFixed(1) + ' ' + p1.y.toFixed(1) + ' L' + p2.x.toFixed(1) + ' ' + p2.y.toFixed(1),
+      x1: p1.x, y1: p1.y,
+      x2: p2.x, y2: p2.y,
+      mx, my,
+      lx: lpos.lx, ly: lpos.ly,
+      startAngle: Math.atan2(dy, dx) * 180 / Math.PI,
+      endAngle: Math.atan2(dy, dx) * 180 / Math.PI,
+      p1, p2
+    };
+  }
+
+  const sides = wsPickNearestSides(fromRect, toRect);
+  const p1 = wsSideMidpointAnchor(fromRect, sides.fromSide, lane * 0.55, startOff);
+  const p2 = wsSideMidpointAnchor(toRect, sides.toSide, lane * 0.55, endOff);
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  const dist = Math.hypot(dx, dy) || 1;
+  const startAngle = Math.atan2(p1.ny, p1.nx) * 180 / Math.PI;
+  const endAngle = Math.atan2(-p2.ny, -p2.nx) * 180 / Math.PI;
+
+  if (routing === 'orthogonal') {
+    const horiz = sides.fromSide === 'left' || sides.fromSide === 'right';
+    const stub = 24;
+    const pts = [{ x: p1.x, y: p1.y }];
+    if (horiz) {
+      const forward = dx * p1.nx >= 12;
+      if (forward) {
+        const midX = (p1.x + p2.x) / 2 + lane * 0.35;
+        pts.push({ x: midX, y: p1.y }, { x: midX, y: p2.y });
+      } else {
+        const sx1 = p1.x + p1.nx * stub;
+        const sx2 = p2.x + p2.nx * stub;
+        const midY = (p1.y + p2.y) / 2 + lane * 0.35;
+        pts.push({ x: sx1, y: p1.y }, { x: sx1, y: midY }, { x: sx2, y: midY }, { x: sx2, y: p2.y });
+      }
+    } else {
+      const forward = dy * p1.ny >= 12;
+      if (forward) {
+        const midY = (p1.y + p2.y) / 2 + lane * 0.35;
+        pts.push({ x: p1.x, y: midY }, { x: p2.x, y: midY });
+      } else {
+        const sy1 = p1.y + p1.ny * stub;
+        const sy2 = p2.y + p2.ny * stub;
+        const midX = (p1.x + p2.x) / 2 + lane * 0.35;
+        pts.push({ x: p1.x, y: sy1 }, { x: midX, y: sy1 }, { x: midX, y: sy2 }, { x: p2.x, y: sy2 });
+      }
+    }
+    pts.push({ x: p2.x, y: p2.y });
+
+    let totalLen = 0;
+    const segLens = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const sl = Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
+      segLens.push(sl);
+      totalLen += sl;
+    }
+    let half = totalLen / 2;
+    let mx = (p1.x + p2.x) / 2;
+    let my = (p1.y + p2.y) / 2;
+    let mtx = dx, mty = dy;
+    for (let i = 0; i < segLens.length; i++) {
+      if (half <= segLens[i] || i === segLens.length - 1) {
+        const frac = segLens[i] > 0.01 ? clampNum(half / segLens[i], 0, 1) : 0.5;
+        mx = pts[i].x + (pts[i + 1].x - pts[i].x) * frac;
+        my = pts[i].y + (pts[i + 1].y - pts[i].y) * frac;
+        mtx = pts[i + 1].x - pts[i].x;
+        mty = pts[i + 1].y - pts[i].y;
+        break;
+      }
+      half -= segLens[i];
+    }
+    const lpos = wsLabelAbovePos(mx, my, mtx || dx, mty || dy);
+    const d = pts.map((pt, i) => (i === 0 ? 'M' : 'L') + pt.x.toFixed(1) + ' ' + pt.y.toFixed(1)).join(' ');
+    return {
+      d, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y,
+      mx, my, lx: lpos.lx, ly: lpos.ly,
+      startAngle, endAngle, p1, p2
+    };
+  }
+
+  if (routing === 'organic') {
+    const geom = wsArrowCurveGeometry(p1, p2, fc, tc, 0);
+    const bendNx = -dy / dist;
+    const bendNy = dx / dist;
+    const c1x = geom.c1x + bendNx * lane * 0.85;
+    const c1y = geom.c1y + bendNy * lane * 0.85;
+    const c2x = geom.c2x + bendNx * lane * 0.85;
+    const c2y = geom.c2y + bendNy * lane * 0.85;
+    const d = 'M' + p1.x.toFixed(1) + ' ' + p1.y.toFixed(1) +
+      ' C' + c1x.toFixed(1) + ' ' + c1y.toFixed(1) + ', ' +
+      c2x.toFixed(1) + ' ' + c2y.toFixed(1) + ', ' +
+      p2.x.toFixed(1) + ' ' + p2.y.toFixed(1);
+    const mx = 0.125 * p1.x + 0.375 * c1x + 0.375 * c2x + 0.125 * p2.x;
+    const my = 0.125 * p1.y + 0.375 * c1y + 0.375 * c2y + 0.125 * p2.y;
+    const tanX = 0.75 * (c2x - c1x) + 0.25 * (p2.x - p1.x);
+    const tanY = 0.75 * (c2y - c1y) + 0.25 * (p2.y - p1.y);
+    const lpos = wsLabelAbovePos(mx, my, tanX || dx, tanY || dy);
+    return {
+      d, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y,
+      c1x, c1y, c2x, c2y,
+      mx, my, lx: lpos.lx, ly: lpos.ly,
+      startAngle: Math.atan2(c1y - p1.y, c1x - p1.x) * 180 / Math.PI,
+      endAngle: Math.atan2(p2.y - c2y, p2.x - c2x) * 180 / Math.PI,
+      p1, p2
+    };
+  }
+
+  /* s-curve (padrão) — sai perpendicular pelo meio do lado mais próximo */
+  const horiz = sides.fromSide === 'left' || sides.fromSide === 'right';
+  const primaryDist = horiz ? Math.abs(dx) : Math.abs(dy);
+  const handle = clampNum(Math.max(primaryDist * 0.5, dist * 0.28, 36), 34, 210);
+  const nx = -dy / dist;
+  const ny = dx / dist;
+  const c1x = p1.x + p1.nx * handle + nx * lane * 0.3;
+  const c1y = p1.y + p1.ny * handle + ny * lane * 0.3;
+  const c2x = p2.x + p2.nx * handle + nx * lane * 0.3;
+  const c2y = p2.y + p2.ny * handle + ny * lane * 0.3;
+  const d = 'M' + p1.x.toFixed(1) + ' ' + p1.y.toFixed(1) +
+    ' C' + c1x.toFixed(1) + ' ' + c1y.toFixed(1) + ', ' +
+    c2x.toFixed(1) + ' ' + c2y.toFixed(1) + ', ' +
+    p2.x.toFixed(1) + ' ' + p2.y.toFixed(1);
+  const mx = 0.125 * p1.x + 0.375 * c1x + 0.375 * c2x + 0.125 * p2.x;
+  const my = 0.125 * p1.y + 0.375 * c1y + 0.375 * c2y + 0.125 * p2.y;
+  const tanX = 0.75 * (c2x - c1x) + 0.25 * (p2.x - p1.x);
+  const tanY = 0.75 * (c2y - c1y) + 0.25 * (p2.y - p1.y);
+  const lpos = wsLabelAbovePos(mx, my, tanX || dx, tanY || dy);
+  return {
+    d, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y,
+    c1x, c1y, c2x, c2y,
+    mx, my, lx: lpos.lx, ly: lpos.ly,
+    startAngle, endAngle, p1, p2
+  };
 }
 
 function wsArrowCurveGeometry(p1, p2, fc, tc, laneOffset) {
@@ -171,19 +596,18 @@ function wsArrowCurveGeometry(p1, p2, fc, tc, laneOffset) {
   const tcx = tc ? Number(tc.x) || x2 : x2;
   const tcy = tc ? Number(tc.y) || y2 : y2;
 
-  const outX = x1 - fcx;
-  const outY = y1 - fcy;
-  const inX = x2 - tcx;
-  const inY = y2 - tcy;
+  const outX = p1 && p1.nx != null ? p1.nx : (x1 - fcx);
+  const outY = p1 && p1.ny != null ? p1.ny : (y1 - fcy);
+  const inX = p2 && p2.nx != null ? p2.nx : (x2 - tcx);
+  const inY = p2 && p2.ny != null ? p2.ny : (y2 - tcy);
 
-  if (Math.hypot(outX, outY) > 1 && Math.hypot(inX, inY) > 1) {
+  if (Math.hypot(outX, outY) > 0.2 && Math.hypot(inX, inY) > 0.2) {
     const outLen = Math.hypot(outX, outY) || 1;
     const inLen = Math.hypot(inX, inY) || 1;
     const ux1 = outX / outLen;
     const uy1 = outY / outLen;
     const ux2 = inX / inLen;
     const uy2 = inY / inLen;
-    // Curva orgânica influenciada pela saída dos cartões e pela pista paralela
     c1x = sx1 + ux1 * bend + nx * lane * 0.85;
     c1y = sy1 + uy1 * bend + ny * lane * 0.85;
     c2x = sx2 + ux2 * bend + nx * lane * 0.85;
@@ -201,7 +625,6 @@ function wsArrowCurveGeometry(p1, p2, fc, tc, laneOffset) {
     c2x.toFixed(1) + ' ' + c2y.toFixed(1) + ', ' +
     sx2.toFixed(1) + ' ' + sy2.toFixed(1);
 
-  // Ponto médio real da cúbica (t = 0.5)
   const mx = 0.125 * sx1 + 0.375 * c1x + 0.375 * c2x + 0.125 * sx2;
   const my = 0.125 * sy1 + 0.375 * c1y + 0.375 * c2y + 0.125 * sy2;
 
@@ -216,17 +639,23 @@ function wsNormalizeArrow(raw, genId) {
   if (!raw || !raw.from || !raw.to || raw.from === raw.to) return null;
   const makeId = typeof genId === 'function' ? genId : (() => Math.random().toString(36).slice(2, 9));
   const kind = WS_ARROW_KINDS.some(k => k.id === raw.kind) ? raw.kind : 'relates';
-  const dir = WS_ARROW_DIRS.some(d => d.id === raw.dir) ? raw.dir : 'forward';
+  const dir = WS_ARROW_DIRS.some(d => d.id === raw.dir) ? raw.dir : wsDefaultDirForKind(kind);
   const color = /^#[0-9a-f]{3,8}$/i.test(String(raw.color || '')) ? String(raw.color) : '';
   const label = String(raw.label == null ? '' : raw.label).replace(/\s+/g, ' ').trim().slice(0, 48);
   const startCap = wsNormalizeArrowCap(raw.startCap);
   const endCap = wsNormalizeArrowCap(raw.endCap);
+  const routing = wsNormalizeArrowRouting(raw.routing, true);
+  const lineStyle = wsNormalizeArrowLineStyle(raw.lineStyle, true);
+  const width = wsNormalizeArrowWidth(raw.width, true);
   return {
     id: String(raw.id || makeId()),
     from: String(raw.from),
     to: String(raw.to),
     kind,
     dir,
+    routing,
+    lineStyle,
+    width,
     label,
     color,
     startCap,
@@ -638,6 +1067,90 @@ function wsMoveStrokePoints(stroke, dx, dy) {
   }
 }
 
+function wsPointToSegmentDistSq(px, py, ax, ay, bx, by) {
+  const vx = bx - ax;
+  const vy = by - ay;
+  const lenSq = vx * vx + vy * vy;
+  if (lenSq <= 1e-6) {
+    const dx = px - ax;
+    const dy = py - ay;
+    return dx * dx + dy * dy;
+  }
+  const t = Math.max(0, Math.min(1, ((px - ax) * vx + (py - ay) * vy) / lenSq));
+  const cx = ax + t * vx;
+  const cy = ay + t * vy;
+  const dx = px - cx;
+  const dy = py - cy;
+  return dx * dx + dy * dy;
+}
+
+function wsFindStrokeAtPoint(strokes, pt, tolerance) {
+  if (!Array.isArray(strokes) || !strokes.length || !pt) return null;
+  const px = Number(pt.x);
+  const py = Number(pt.y);
+  if (!Number.isFinite(px) || !Number.isFinite(py)) return null;
+  const tol = Math.max(2, Number(tolerance) || 6);
+
+  for (let i = strokes.length - 1; i >= 0; i--) {
+    const st = strokes[i];
+    if (!st || !st.id || !Array.isArray(st.points) || !st.points.length) continue;
+    const hitR = tol + Math.max(2, (Number(st.size) || 4) * (st.tool === 'marker' ? 1.4 : 0.7));
+    const hitSq = hitR * hitR;
+    const sb = wsStrokeBounds(st);
+    if (sb && (px < sb.x - hitR || px > sb.x + sb.w + hitR || py < sb.y - hitR || py > sb.y + sb.h + hitR)) {
+      continue;
+    }
+    const pts = st.points;
+    if (pts.length === 1) {
+      const dx = px - (Number(pts[0].x) || 0);
+      const dy = py - (Number(pts[0].y) || 0);
+      if (dx * dx + dy * dy <= hitSq) return st;
+      continue;
+    }
+    for (let j = 1; j < pts.length; j++) {
+      const a = pts[j - 1];
+      const b = pts[j];
+      if (!a || !b) continue;
+      if (wsPointToSegmentDistSq(px, py, Number(a.x) || 0, Number(a.y) || 0, Number(b.x) || 0, Number(b.y) || 0) <= hitSq) {
+        return st;
+      }
+    }
+  }
+  return null;
+}
+
+function wsIsPointInStrokeSelection(strokes, selectedIds, pt, pad) {
+  if (!Array.isArray(strokes) || !strokes.length || !selectedIds || !pt) return false;
+  const px = Number(pt.x);
+  const py = Number(pt.y);
+  if (!Number.isFinite(px) || !Number.isFinite(py)) return false;
+  const hasFn = typeof selectedIds.has === 'function';
+  const selList = strokes.filter(s => s && s.id && (hasFn ? selectedIds.has(s.id) : Array.isArray(selectedIds) && selectedIds.includes(s.id)));
+  if (!selList.length) return false;
+  const bb = wsStrokesBounds(selList);
+  if (!bb) return false;
+  const p = Math.max(0, Number(pad) || 0);
+  return px >= bb.x - p && px <= bb.x + bb.w + p && py >= bb.y - p && py <= bb.y + bb.h + p;
+}
+
+function wsApplyStrokeOffsets(strokeItems, dx, dy) {
+  if (!Array.isArray(strokeItems) || !strokeItems.length) return;
+  const rx = Number(dx) || 0;
+  const ry = Number(dy) || 0;
+  for (let k = 0; k < strokeItems.length; k++) {
+    const item = strokeItems[k];
+    if (!item || !item.stroke || !Array.isArray(item.stroke.points) || !Array.isArray(item.origPoints)) continue;
+    const pts = item.stroke.points;
+    const orig = item.origPoints;
+    const len = Math.min(pts.length, orig.length);
+    for (let i = 0; i < len; i++) {
+      if (!pts[i] || !orig[i]) continue;
+      pts[i].x = Math.round((Number(orig[i].x) + rx) * 100) / 100;
+      pts[i].y = Math.round((Number(orig[i].y) + ry) * 100) / 100;
+    }
+  }
+}
+
 const WS_SNAP_GRID = 26;
 
 const WS_NOTE_FONTS = [
@@ -692,9 +1205,59 @@ function wsPlainTextToNoteHtml(text) {
   return lines.map(line => (line ? '<div>' + wsEscapeHtmlText(line) + '</div>' : '<div><br></div>')).join('');
 }
 
+function wsCompactMathSlotsInHtml(html) {
+  const src = String(html == null ? '' : html);
+  if (!src.includes('ws-math-slot')) return src;
+  let out = '';
+  let pos = 0;
+  const openRe = /<span\b([^>]*\bws-math-slot\b[^>]*)>/gi;
+  let match;
+  while ((match = openRe.exec(src)) !== null) {
+    if (match.index < pos) continue;
+    out += src.slice(pos, match.index);
+    const attrs = match[1] || '';
+    const texM = /data-tex\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(attrs);
+    const dispM = /data-display\s*=\s*(?:"([01])"|'([01])'|([01]))/i.exec(attrs);
+    const rawTex = texM ? (texM[1] != null ? texM[1] : texM[2]) : '';
+    const isDisplay = dispM ? ((dispM[1] || dispM[2] || dispM[3]) === '1') : false;
+
+    let depth = 1;
+    let scan = openRe.lastIndex;
+    const tagRe = /<(\/?)span\b[^>]*>/gi;
+    tagRe.lastIndex = scan;
+    let tm;
+    let endIdx = -1;
+    while ((tm = tagRe.exec(src)) !== null) {
+      if (tm[1] === '/') depth--;
+      else depth++;
+      if (depth === 0) {
+        endIdx = tagRe.lastIndex;
+        break;
+      }
+    }
+    if (endIdx < 0) endIdx = openRe.lastIndex;
+    const decodedTex = String(rawTex || '')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&');
+    const escapedTex = wsEscapeHtmlText(decodedTex);
+    const delim = isDisplay ? '$$' : '$';
+    if (decodedTex.trim()) {
+      out += '<span class="ws-math-slot" contenteditable="false" data-tex="' + escapedTex + '" data-display="' + (isDisplay ? '1' : '0') + '">' + delim + escapedTex + delim + '</span>';
+    }
+    pos = endIdx;
+    openRe.lastIndex = endIdx;
+  }
+  out += src.slice(pos);
+  return out;
+}
+
 function wsSanitizeNoteHtml(html) {
   let s = String(html == null ? '' : html);
   if (!s.trim()) return '';
+  s = wsCompactMathSlotsInHtml(s);
   s = s
     .replace(/<\s*(script|style|iframe|object|embed|svg|math|link|meta|base)[^>]*>[\s\S]*?<\/\s*\1\s*>/gi, '')
     .replace(/<\s*(script|style|iframe|object|embed|svg|math|link|meta|base)[^>]*\/?>/gi, '');
@@ -714,6 +1277,13 @@ function wsSanitizeNoteHtml(html) {
       const bm = /data-bullet\s*=\s*(['"]?)(disc|dash|arrow)\1/i.exec(rawAttrs || '');
       if (bm) outAttrs += ' data-bullet="' + bm[2].toLowerCase() + '"';
     }
+    if (tag === 'span' && /\bws-math-slot\b/i.test(rawAttrs || '')) {
+      const texM = /data-tex\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(rawAttrs || '');
+      const dispM = /data-display\s*=\s*(?:"([01])"|'([01])'|([01]))/i.exec(rawAttrs || '');
+      const texVal = texM ? (texM[1] != null ? texM[1] : texM[2]) : '';
+      const dispVal = dispM ? (dispM[1] || dispM[2] || dispM[3] || '0') : '0';
+      return '<span class="ws-math-slot" contenteditable="false" data-tex="' + texVal + '" data-display="' + dispVal + '">';
+    }
     if (tag === 'div' || tag === 'p' || tag === 'li' || tag === 'span') {
       const sm = /style\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(rawAttrs || '');
       if (sm) {
@@ -727,8 +1297,12 @@ function wsSanitizeNoteHtml(html) {
 }
 
 function wsNoteHtmlToPlainText(html) {
-  const s = String(html == null ? '' : html);
+  let s = String(html == null ? '' : html);
   if (!s) return '';
+  s = wsCompactMathSlotsInHtml(s);
+  s = s
+    .replace(/<\s*(script|style|iframe|object|embed|svg|math|link|meta|base)[^>]*>[\s\S]*?<\/\s*\1\s*>/gi, '')
+    .replace(/<\s*(script|style|iframe|object|embed|svg|math|link|meta|base)[^>]*\/?>/gi, '');
   return s
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/(div|p|li|ul|ol)>/gi, '\n')
@@ -1089,6 +1663,10 @@ if (typeof module !== 'undefined' && module.exports) {
     WS_ARROW_DIRS,
     WS_ARROW_COLORS,
     WS_ARROW_CAPS,
+    WS_ARROW_CAP_SHAPES,
+    WS_ARROW_ROUTINGS,
+    WS_ARROW_LINE_STYLES,
+    WS_ARROW_WIDTHS,
     WS_BG_PATTERNS,
     WS_SNAP_GRID,
     WS_NOTE_FONTS,
@@ -1102,8 +1680,26 @@ if (typeof module !== 'undefined' && module.exports) {
     wsValidTint,
     wsNormalizeBgPattern,
     wsNormalizeArrowCap,
+    wsNormalizeArrowRouting,
+    wsNormalizeArrowLineStyle,
+    wsNormalizeArrowWidth,
+    wsDefaultDirForKind,
+    wsDefaultLinkSettings,
+    wsNormalizeLinkDefaults,
+    wsDefaultShapeForKind,
+    wsResolveEndPort,
+    wsResolveArrowEndpoints,
     wsArrowDefaultCaps,
     wsResolveArrowCaps,
+    wsLineDashArray,
+    wsResolveArrowStyle,
+    wsArrowCardPairKey,
+    wsBuildArrowPairIndex,
+    wsRayBoxEdge,
+    wsPickNearestSides,
+    wsSideMidpointAnchor,
+    wsLabelAbovePos,
+    wsBuildArrowGeometry,
     wsArrowCurveGeometry,
     wsNormalizeArrow,
     wsArrowKindMeta,
@@ -1118,6 +1714,10 @@ if (typeof module !== 'undefined' && module.exports) {
     wsStrokesBounds,
     wsFindItemsInBox,
     wsMoveStrokePoints,
+    wsPointToSegmentDistSq,
+    wsFindStrokeAtPoint,
+    wsIsPointInStrokeSelection,
+    wsApplyStrokeOffsets,
     wsNormalizeNoteFont,
     wsNoteFontFamily,
     wsNormalizeNoteSize,

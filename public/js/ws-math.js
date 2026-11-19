@@ -14,9 +14,10 @@ const WS_MATH_GREEK = {
 const WS_MATH_SYMBOLS = {
   pm: '±', mp: '∓', times: '×', div: '÷', cdot: '·', ast: '∗', star: '⋆',
   bullet: '•', circ: '∘', degree: '°', prime: '′', dprime: '″',
-  leq: '≤', le: '≤', geq: '≥', ge: '≥', neq: '≠', ne: '≠', approx: '≈',
-  equiv: '≡', cong: '≅', sim: '∼', simeq: '≃', propto: '∝', asymp: '≍',
-  ll: '≪', gg: '≫', prec: '≺', succ: '≻',
+  leq: '≤', le: '≤', geq: '≥', ge: '≥', leqslant: '⩽', geqslant: '⩾',
+  neq: '≠', ne: '≠', approx: '≈',
+  equiv: '≡', cong: '≅', sim: '∼', simeq: '≃', propto: '∝', asymp: '≍', doteq: '≐',
+  coloneqq: '≔', ll: '≪', gg: '≫', prec: '≺', succ: '≻',
   to: '→', rightarrow: '→', leftarrow: '←', leftrightarrow: '↔',
   Rightarrow: '⇒', Leftarrow: '⇐', Leftrightarrow: '⇔', iff: '⇔',
   implies: '⇒', mapsto: '↦', uparrow: '↑', downarrow: '↓',
@@ -53,9 +54,11 @@ const WS_MATH_BLACKBOARD = {
 };
 
 const WS_MATH_ACCENTS = {
-  vec: '→', hat: '^', bar: '¯', tilde: '˜', dot: '˙', ddot: '¨',
-  overline: 'bar', underline: 'under'
+  vec: '→', hat: '^', widehat: '^', bar: '¯', tilde: '˜', widetilde: '˜',
+  dot: '˙', ddot: '¨', overline: 'bar', underline: 'under'
 };
+
+const WS_MATH_DOLLAR_SENTINEL = '\uE001';
 
 function wsMathEscapeHtml(str) {
   return String(str == null ? '' : str)
@@ -66,8 +69,16 @@ function wsMathEscapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
+function wsMaskEscapedDollars(src) {
+  return String(src || '').replace(/\\\$/g, WS_MATH_DOLLAR_SENTINEL);
+}
+
+function wsUnmaskDollarsHtml(str) {
+  return String(str || '').split(WS_MATH_DOLLAR_SENTINEL).join('$');
+}
+
 function wsHasMathDelimiters(text) {
-  const src = String(text || '');
+  const src = wsMaskEscapedDollars(text);
   if (!src) return false;
   if (/\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)/.test(src)) return true;
   return /(^|[^\\$])\$(?!\s)([^\n$]+?)(?<!\s)\$(?!\d)/.test(src);
@@ -148,6 +159,33 @@ function wsSplitMatrixCells(body) {
   return rows;
 }
 
+function wsSplitTopLevelDisplayLines(tex) {
+  const src = String(tex || '');
+  const lines = [];
+  let cur = '';
+  let depth = 0;
+  let envDepth = 0;
+  for (let i = 0; i < src.length; i++) {
+    if (src.startsWith('\\begin{', i)) {
+      envDepth++;
+    } else if (src.startsWith('\\end{', i) && envDepth > 0) {
+      envDepth--;
+    }
+    const ch = src[i];
+    if (ch === '\\' && src[i + 1] === '\\' && depth === 0 && envDepth === 0) {
+      lines.push(cur.trim());
+      cur = '';
+      i++;
+      continue;
+    }
+    if (ch === '{') depth++;
+    else if (ch === '}') depth = Math.max(0, depth - 1);
+    cur += ch;
+  }
+  if (cur.trim() || !lines.length) lines.push(cur.trim());
+  return lines;
+}
+
 function wsMathTokenize(src) {
   const tokens = [];
   let i = 0;
@@ -175,12 +213,22 @@ function wsMathTokenize(src) {
       continue;
     }
 
+    if (ch === '\'') {
+      let count = 0;
+      while (i < len && src[i] === '\'') { count++; i++; }
+      const primes = count === 2 ? '″' : (count >= 3 ? '‴' : '′');
+      tokens.push({ type: 'sup', html: '<span class="ws-m-prime">' + primes + '</span>' });
+      continue;
+    }
+
     if (ch === '\\') {
       if (i + 1 >= len) { i++; continue; }
       const next = src[i + 1];
       if (!/[A-Za-z]/.test(next)) {
         if (next === ',' || next === ':' || next === ';') {
           tokens.push({ type: 'atom', html: '<span class="ws-m-sp"></span>' });
+        } else if (next === '!') {
+          tokens.push({ type: 'atom', html: '<span class="ws-m-negsp"></span>' });
         } else if (next === ' ') {
           tokens.push({ type: 'atom', html: '&nbsp;' });
         } else if (next === '\\') {
@@ -203,13 +251,31 @@ function wsMathTokenize(src) {
         const endToken = '\\end{' + envName + '}';
         const endIdx = src.indexOf(endToken, envArg.next);
         if (endIdx >= 0) {
-          const inner = src.slice(envArg.next, endIdx);
+          let bodyStart = envArg.next;
+          let arrayCols = null;
+          if (envName === 'array') {
+            const colArg = wsParseTexArg(src, bodyStart);
+            if (colArg && colArg.value) {
+              arrayCols = colArg.value.replace(/[^lcr]/gi, '').toLowerCase().split('');
+              bodyStart = colArg.next;
+            }
+          }
+          const inner = src.slice(bodyStart, endIdx);
           i = endIdx + endToken.length;
           const rows = wsSplitMatrixCells(inner);
-          const tableHtml = '<span class="ws-m-matrix">' + rows.map(r =>
-            '<span class="ws-m-mrow">' + r.map(c =>
-              '<span class="ws-m-mcell">' + wsRenderTexCore(c) + '</span>'
-            ).join('') + '</span>'
+          const isAligned = envName === 'aligned' || envName === 'align' || envName === 'align*' || envName === 'split' || envName === 'eqnarray' || envName === 'eqnarray*';
+          const isGather = envName === 'gathered' || envName === 'gather' || envName === 'gather*';
+          const tableCls = isAligned
+            ? 'ws-m-matrix ws-m-aligned'
+            : (isGather ? 'ws-m-matrix ws-m-gather' : 'ws-m-matrix');
+          const tableHtml = '<span class="' + tableCls + '">' + rows.map(r =>
+            '<span class="ws-m-mrow">' + r.map((c, colIdx) => {
+              let alignCls = '';
+              if (arrayCols && arrayCols[colIdx]) {
+                alignCls = ' ws-m-col-' + arrayCols[colIdx];
+              }
+              return '<span class="ws-m-mcell' + alignCls + '">' + wsRenderTexCore(c) + '</span>';
+            }).join('') + '</span>'
           ).join('') + '</span>';
           let lDelim = '', rDelim = '';
           if (envName === 'pmatrix') { lDelim = '('; rDelim = ')'; }
@@ -217,15 +283,19 @@ function wsMathTokenize(src) {
           else if (envName === 'Bmatrix' || envName === 'cases') { lDelim = '{'; rDelim = envName === 'cases' ? '' : '}'; }
           else if (envName === 'vmatrix') { lDelim = '|'; rDelim = '|'; }
           else if (envName === 'Vmatrix') { lDelim = '‖'; rDelim = '‖'; }
-          const cls = envName === 'cases' ? 'ws-m-delim ws-m-cases' : 'ws-m-delim';
-          tokens.push({
-            type: 'atom',
-            html: '<span class="' + cls + '">' +
-              (lDelim ? '<span class="ws-m-bracket">' + lDelim + '</span>' : '') +
-              tableHtml +
-              (rDelim ? '<span class="ws-m-bracket">' + rDelim + '</span>' : '') +
-            '</span>'
-          });
+          if (lDelim || rDelim) {
+            const cls = envName === 'cases' ? 'ws-m-delim ws-m-cases' : 'ws-m-delim';
+            tokens.push({
+              type: 'atom',
+              html: '<span class="' + cls + '">' +
+                (lDelim ? '<span class="ws-m-bracket">' + lDelim + '</span>' : '') +
+                tableHtml +
+                (rDelim ? '<span class="ws-m-bracket">' + rDelim + '</span>' : '') +
+              '</span>'
+            });
+          } else {
+            tokens.push({ type: 'atom', html: tableHtml });
+          }
           continue;
         }
       }
@@ -246,6 +316,26 @@ function wsMathTokenize(src) {
           tokens.push({ type: 'atom', html: '<span class="ws-m-fence">' + wsMathEscapeHtml(d) + '</span>' });
         }
         continue;
+      }
+
+      if (cmd === 'not') {
+        let rest = i;
+        while (rest < len && /\s/.test(src[rest])) rest++;
+        if (src[rest] === '=') {
+          tokens.push({ type: 'atom', html: '<span class="ws-m-op">≠</span>' });
+          i = rest + 1;
+          continue;
+        }
+        if (src.startsWith('\\in', rest) && !/[A-Za-z]/.test(src[rest + 3] || '')) {
+          tokens.push({ type: 'atom', html: '<span class="ws-m-op">∉</span>' });
+          i = rest + 3;
+          continue;
+        }
+        if (src.startsWith('\\subset', rest) && !/[A-Za-z]/.test(src[rest + 7] || '')) {
+          tokens.push({ type: 'atom', html: '<span class="ws-m-op">⊄</span>' });
+          i = rest + 7;
+          continue;
+        }
       }
 
       if (cmd === 'frac' || cmd === 'dfrac' || cmd === 'tfrac') {
@@ -275,6 +365,50 @@ function wsMathTokenize(src) {
         continue;
       }
 
+      if (cmd === 'overset' || cmd === 'stackrel') {
+        const top = wsParseTexArg(src, i);
+        const base = wsParseTexArg(src, top.next);
+        i = base.next;
+        tokens.push({
+          type: 'atom',
+          html: '<span class="ws-m-limits">' +
+            '<span class="ws-m-lim-sup">' + wsRenderTexCore(top.value) + '</span>' +
+            '<span class="ws-m-lim-base">' + wsRenderTexCore(base.value) + '</span>' +
+          '</span>'
+        });
+        continue;
+      }
+
+      if (cmd === 'underset') {
+        const bot = wsParseTexArg(src, i);
+        const base = wsParseTexArg(src, bot.next);
+        i = base.next;
+        tokens.push({
+          type: 'atom',
+          html: '<span class="ws-m-limits">' +
+            '<span class="ws-m-lim-base">' + wsRenderTexCore(base.value) + '</span>' +
+            '<span class="ws-m-lim-sub">' + wsRenderTexCore(bot.value) + '</span>' +
+          '</span>'
+        });
+        continue;
+      }
+
+      if (cmd === 'xrightarrow' || cmd === 'xleftarrow') {
+        const subArg = wsParseOptBracket(src, i);
+        const supArg = wsParseTexArg(src, subArg ? subArg.next : i);
+        i = supArg.next;
+        const sym = cmd === 'xleftarrow' ? '←' : '→';
+        tokens.push({
+          type: 'atom',
+          html: '<span class="ws-m-limits ws-m-xarrow">' +
+            (supArg.value ? '<span class="ws-m-lim-sup">' + wsRenderTexCore(supArg.value) + '</span>' : '') +
+            '<span class="ws-m-op">' + sym + '</span>' +
+            (subArg && subArg.value ? '<span class="ws-m-lim-sub">' + wsRenderTexCore(subArg.value) + '</span>' : '') +
+          '</span>'
+        });
+        continue;
+      }
+
       if (cmd === 'sqrt') {
         const idxArg = wsParseOptBracket(src, i);
         const rad = wsParseTexArg(src, idxArg ? idxArg.next : i);
@@ -297,7 +431,7 @@ function wsMathTokenize(src) {
         continue;
       }
 
-      if (cmd === 'mathrm') {
+      if (cmd === 'mathrm' || cmd === 'operatorname') {
         const arg = wsParseTexArg(src, i);
         i = arg.next;
         tokens.push({ type: 'atom', html: '<span class="ws-m-rm">' + wsRenderTexCore(arg.value) + '</span>' });
@@ -420,8 +554,8 @@ function wsRenderTexCore(tex) {
       let sub = null;
       while (i + 1 < tokens.length && (tokens[i + 1].type === 'sup' || tokens[i + 1].type === 'sub')) {
         const next = tokens[++i];
-        if (next.type === 'sup') sup = next.html;
-        else sub = next.html;
+        if (next.type === 'sup') sup = sup !== null ? (sup + next.html) : next.html;
+        else sub = sub !== null ? (sub + next.html) : next.html;
       }
       if (sup !== null || sub !== null) {
         if (tok.bigOp) {
@@ -450,11 +584,217 @@ function wsRenderTexCore(tex) {
   return out;
 }
 
+function wsRenderFormulaInner(tex, displayMode) {
+  const cleanTex = String(tex || '').split(WS_MATH_DOLLAR_SENTINEL).join('\\$');
+  if (displayMode) {
+    const lines = wsSplitTopLevelDisplayLines(cleanTex);
+    return lines.length > 1
+      ? lines.map(ln => '<span class="ws-m-dline">' + wsRenderTexCore(ln) + '</span>').join('')
+      : wsRenderTexCore(cleanTex);
+  }
+  return wsRenderTexCore(cleanTex);
+}
+
 function wsRenderFormula(tex, displayMode) {
-  const rendered = wsRenderTexCore(tex);
-  return displayMode
-    ? '<div class="ws-math-display" role="math">' + rendered + '</div>'
-    : '<span class="ws-math-inline" role="math">' + rendered + '</span>';
+  const cleanTex = String(tex || '').split(WS_MATH_DOLLAR_SENTINEL).join('\\$');
+  const rendered = wsRenderFormulaInner(cleanTex, displayMode);
+  const attr = ' data-tex="' + wsMathEscapeHtml(cleanTex) + '" data-display="' + (displayMode ? '1' : '0') + '"';
+  if (displayMode) {
+    return '<div class="ws-math-display" role="math"' + attr + '>' + rendered + '</div>';
+  }
+  return '<span class="ws-math-inline" role="math"' + attr + '>' + rendered + '</span>';
+}
+
+function wsHasNonEmptyArgAt(src, pos) {
+  let i = pos;
+  while (i < src.length && /\s/.test(src[i])) i++;
+  if (i >= src.length) return { ok: false, next: i };
+  if (src[i] === '{') {
+    const parsed = wsParseTexArg(src, i);
+    const trimmed = parsed.value.trim();
+    if (!trimmed) return { ok: false, next: parsed.next };
+    return { ok: true, next: parsed.next };
+  }
+  if (src[i] === '}' || src[i] === '^' || src[i] === '_') {
+    return { ok: false, next: i };
+  }
+  const parsed = wsParseTexArg(src, i);
+  return { ok: !!parsed.value.trim(), next: parsed.next };
+}
+
+function wsValidateTex(tex) {
+  const src = String(tex == null ? '' : tex).trim();
+  if (!src) {
+    return { valid: false, isEmpty: true, code: 'empty', reason: 'Fórmula vazia' };
+  }
+
+  let braceDepth = 0;
+  let fenceDepth = 0;
+  const envStack = [];
+  const twoArgCmds = new Set(['frac', 'dfrac', 'tfrac', 'binom', 'overset', 'stackrel', 'underset']);
+  const oneArgCmds = new Set([
+    'sqrt', 'vec', 'hat', 'widehat', 'bar', 'tilde', 'widetilde',
+    'dot', 'ddot', 'overline', 'underline', 'text', 'textrm', 'mbox',
+    'mathrm', 'operatorname', 'mathbf', 'boldsymbol', 'bm', 'mathbb', 'mathcal'
+  ]);
+
+  let i = 0;
+  while (i < src.length) {
+    const ch = src[i];
+    if (ch === '{') {
+      braceDepth++;
+      i++;
+      continue;
+    }
+    if (ch === '}') {
+      braceDepth--;
+      if (braceDepth < 0) {
+        return { valid: false, isEmpty: false, code: 'braces', reason: 'Chaves { } desbalanceadas' };
+      }
+      i++;
+      continue;
+    }
+    if (ch === '^' || ch === '_') {
+      let k = i + 1;
+      while (k < src.length && /\s/.test(src[k])) k++;
+      if (k >= src.length || src[k] === '}' || src[k] === '^' || src[k] === '_') {
+        return { valid: false, isEmpty: false, code: 'script', reason: 'Expoente ou subscrito incompleto' };
+      }
+      i++;
+      continue;
+    }
+    if (ch === '\\') {
+      if (i + 1 >= src.length) {
+        return { valid: false, isEmpty: false, code: 'cmd', reason: 'Comando incompleto após \\' };
+      }
+      const next = src[i + 1];
+      if (!/[A-Za-z]/.test(next)) {
+        i += 2;
+        continue;
+      }
+      let j = i + 1;
+      while (j < src.length && /[A-Za-z]/.test(src[j])) j++;
+      const cmd = src.slice(i + 1, j);
+      i = j;
+
+      if (cmd === 'begin' || cmd === 'end') {
+        let p = i;
+        while (p < src.length && /\s/.test(src[p])) p++;
+        if (src[p] !== '{') {
+          return { valid: false, isEmpty: false, code: 'env', reason: 'Ambiente \\' + cmd + ' sem {nome}' };
+        }
+        const envArg = wsParseTexArg(src, p);
+        const envName = envArg.value.trim();
+        if (!envName) {
+          return { valid: false, isEmpty: false, code: 'env', reason: 'Nome de ambiente vazio' };
+        }
+        if (cmd === 'begin') {
+          envStack.push(envName);
+        } else {
+          const top = envStack.pop();
+          if (top !== envName) {
+            return { valid: false, isEmpty: false, code: 'env', reason: 'Ambiente \\end{' + envName + '} sem correspondência' };
+          }
+        }
+        i = envArg.next;
+        continue;
+      }
+
+      if (cmd === 'left') {
+        let p = i;
+        while (p < src.length && /\s/.test(src[p])) p++;
+        if (p >= src.length) {
+          return { valid: false, isEmpty: false, code: 'delim', reason: 'Falta delimitador após \\left' };
+        }
+        fenceDepth++;
+        continue;
+      }
+      if (cmd === 'right') {
+        let p = i;
+        while (p < src.length && /\s/.test(src[p])) p++;
+        if (p >= src.length) {
+          return { valid: false, isEmpty: false, code: 'delim', reason: 'Falta delimitador após \\right' };
+        }
+        fenceDepth--;
+        if (fenceDepth < 0) {
+          return { valid: false, isEmpty: false, code: 'delim', reason: '\\right sem \\left correspondente' };
+        }
+        continue;
+      }
+
+      if (twoArgCmds.has(cmd)) {
+        const a1 = wsHasNonEmptyArgAt(src, i);
+        if (!a1.ok) {
+          return { valid: false, isEmpty: false, code: 'arg', reason: 'Argumento incompleto em \\' + cmd, detail: cmd };
+        }
+        const a2 = wsHasNonEmptyArgAt(src, a1.next);
+        if (!a2.ok) {
+          return { valid: false, isEmpty: false, code: 'arg', reason: 'Falta segundo argumento em \\' + cmd, detail: cmd };
+        }
+        continue;
+      }
+
+      if (cmd === 'sqrt') {
+        const opt = wsParseOptBracket(src, i);
+        const a1 = wsHasNonEmptyArgAt(src, opt ? opt.next : i);
+        if (!a1.ok) {
+          return { valid: false, isEmpty: false, code: 'arg', reason: 'Argumento incompleto em \\sqrt', detail: 'sqrt' };
+        }
+        continue;
+      }
+
+      if (oneArgCmds.has(cmd)) {
+        const a1 = wsHasNonEmptyArgAt(src, i);
+        if (!a1.ok) {
+          return { valid: false, isEmpty: false, code: 'arg', reason: 'Argumento incompleto em \\' + cmd, detail: cmd };
+        }
+        continue;
+      }
+      continue;
+    }
+    i++;
+  }
+
+  if (braceDepth !== 0) {
+    return { valid: false, isEmpty: false, code: 'braces', reason: 'Chaves { } desbalanceadas' };
+  }
+  if (fenceDepth !== 0) {
+    return { valid: false, isEmpty: false, code: 'delim', reason: 'Falta \\right correspondente' };
+  }
+  if (envStack.length) {
+    const missingEnv = envStack[envStack.length - 1];
+    return { valid: false, isEmpty: false, code: 'env', reason: 'Falta \\end{' + missingEnv + '}', detail: missingEnv };
+  }
+
+  return { valid: true, isEmpty: false, code: null, reason: '' };
+}
+
+function wsRenderTexSafe(tex, displayMode, lastValidHtml) {
+  const check = wsValidateTex(tex);
+  const fallback = typeof lastValidHtml === 'string' ? lastValidHtml : '';
+  if (check.valid) {
+    const innerHtml = wsRenderFormulaInner(tex, !!displayMode);
+    const html = wsRenderFormula(tex, !!displayMode);
+    return {
+      valid: true,
+      isEmpty: false,
+      usedFallback: false,
+      html,
+      innerHtml,
+      code: null,
+      reason: ''
+    };
+  }
+  return {
+    valid: false,
+    isEmpty: !!check.isEmpty,
+    usedFallback: !!fallback,
+    html: fallback,
+    innerHtml: fallback,
+    code: check.code,
+    reason: check.reason,
+    detail: check.detail || ''
+  };
 }
 
 function wsDecodeBasicEntities(str) {
@@ -468,8 +808,9 @@ function wsDecodeBasicEntities(str) {
 }
 
 function wsTransformMathInSegment(rawText, alreadyEscaped) {
-  const plain = alreadyEscaped ? wsDecodeBasicEntities(rawText) : String(rawText || '');
-  if (!plain) return '';
+  const decoded = alreadyEscaped ? wsDecodeBasicEntities(rawText) : String(rawText || '');
+  if (!decoded) return '';
+  const plain = wsMaskEscapedDollars(decoded);
   const regex = /\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|\$(?!\s)([^\n$]+?)(?<!\s)\$(?!\d)/g;
   let out = '';
   let lastIdx = 0;
@@ -477,7 +818,7 @@ function wsTransformMathInSegment(rawText, alreadyEscaped) {
   while ((match = regex.exec(plain)) !== null) {
     if (match.index > lastIdx) {
       const before = plain.slice(lastIdx, match.index);
-      out += wsMathEscapeHtml(before);
+      out += wsUnmaskDollarsHtml(wsMathEscapeHtml(before));
     }
     const isDisplay = match[1] != null || match[2] != null;
     const tex = match[1] != null ? match[1] : (match[2] != null ? match[2] : (match[3] != null ? match[3] : match[4]));
@@ -485,7 +826,7 @@ function wsTransformMathInSegment(rawText, alreadyEscaped) {
     lastIdx = regex.lastIndex;
   }
   if (lastIdx < plain.length) {
-    out += wsMathEscapeHtml(plain.slice(lastIdx));
+    out += wsUnmaskDollarsHtml(wsMathEscapeHtml(plain.slice(lastIdx)));
   }
   return out;
 }
@@ -525,6 +866,9 @@ if (typeof module !== 'undefined' && module.exports) {
     wsHasMathDelimiters,
     wsRenderTexCore,
     wsRenderFormula,
+    wsRenderFormulaInner,
+    wsValidateTex,
+    wsRenderTexSafe,
     wsRenderTextWithMath,
     wsRenderNoteDisplayHtml,
     wsWrapMathSelection

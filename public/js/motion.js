@@ -1309,14 +1309,14 @@ const Motion = {
   stepAmbientRipples(w, h) {
     this.ambientClock += 16;
     const slow = this.level === 'reduced' ? 1.7 : 1;
-    const interval = (2100 - this.pAmount * 1200) * slow;
-    if (this.ambientClock >= interval && this.ripples.length < 4 + Math.round(this.pAmount * 10)) {
+    const interval = (1760 - this.pAmount * 1020) * slow;
+    if (this.ambientClock >= interval && this.ripples.length < 5 + Math.round(this.pAmount * 11)) {
       this.ambientClock = 0;
       const x = 40 + Math.random() * Math.max(1, w - 80);
       const y = 40 + Math.random() * Math.max(1, h - 80);
       this.addRipple(x, y, 'ambient', 0.65 + Math.random() * 0.5);
       // de vez em quando duas gotas caem quase juntas
-      if (Math.random() < 0.16) {
+      if (Math.random() < 0.21) {
         this.addRipple(
           clamp(x + (Math.random() - 0.5) * 220, 20, w - 20),
           clamp(y + (Math.random() - 0.5) * 180, 20, h - 20),

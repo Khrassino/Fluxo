@@ -407,7 +407,7 @@ test('ws-math detects delimiters, renders fractions/subscripts/Greek, preserves 
   assert.equal(out.wrappedSel.text, 'Calcule $$x^2$$ agora');
 });
 
-test('ws-brain computes organic multi-lane arrow curves, custom end caps, bg patterns, and Shift resize snapping', () => {
+test('ws-brain computes organic multi-lane arrow curves, Prompt #10 port caps, bg patterns, and Shift resize snapping', () => {
   const ctx = loadBrainAndAudioContext();
   const out = JSON.parse(vm.runInContext(`(() => {
     const g0 = wsArrowCurveGeometry({ x: 0, y: 0 }, { x: 240, y: 40 }, { x: 0, y: 0 }, { x: 240, y: 40 }, 0);
@@ -416,7 +416,8 @@ test('ws-brain computes organic multi-lane arrow curves, custom end caps, bg pat
 
     const capsAutoForward = wsResolveArrowCaps({ dir: 'forward', kind: 'relates', startCap: 'auto', endCap: 'auto' });
     const capsAutoSupports = wsResolveArrowCaps({ dir: 'forward', kind: 'supports', startCap: 'auto', endCap: 'auto' });
-    const capsAutoContrast = wsResolveArrowCaps({ dir: 'forward', kind: 'contrast', startCap: 'auto', endCap: 'auto' });
+    const capsAutoContrast = wsResolveArrowCaps({ dir: 'none', kind: 'contrast', startCap: 'auto', endCap: 'auto' });
+    const capsSequence = wsResolveArrowCaps({ dir: 'forward', kind: 'sequence', startCap: 'auto', endCap: 'auto' });
     const capsCustom = wsResolveArrowCaps({ dir: 'both', kind: 'contrast', startCap: 'circle-open', endCap: 'diamond' });
 
     const normBoard = Workspace.normalize({
@@ -444,6 +445,7 @@ test('ws-brain computes organic multi-lane arrow curves, custom end caps, bg pat
       capsAutoForward,
       capsAutoSupports,
       capsAutoContrast,
+      capsSequence,
       capsCustom,
       normBgPattern: normBoard.bg.pattern,
       normArrow: normBoard.arrows[0],
@@ -456,9 +458,10 @@ test('ws-brain computes organic multi-lane arrow curves, custom end caps, bg pat
   assert.ok(out.g0.d.startsWith('M'));
   assert.ok(out.g0.d.includes(' C'));
   assert.notEqual(out.gLanePos.d, out.gLaneNeg.d);
-  assert.deepEqual(out.capsAutoForward, { startCap: 'circle-open', endCap: 'arrow' });
-  assert.deepEqual(out.capsAutoSupports, { startCap: 'circle', endCap: 'arrow' });
-  assert.deepEqual(out.capsAutoContrast, { startCap: 'bar', endCap: 'bar' });
+  assert.deepEqual(out.capsAutoForward, { startCap: 'circle-open', endCap: 'circle' });
+  assert.deepEqual(out.capsAutoSupports, { startCap: 'diamond', endCap: 'diamond' });
+  assert.deepEqual(out.capsAutoContrast, { startCap: 'square-open', endCap: 'square-open' });
+  assert.deepEqual(out.capsSequence, { startCap: 'none', endCap: 'arrow' });
   assert.deepEqual(out.capsCustom, { startCap: 'circle-open', endCap: 'diamond' });
   assert.equal(out.normBgPattern, 'lines');
   assert.equal(out.badBgPattern, 'dots');
@@ -471,31 +474,141 @@ test('ws-brain computes organic multi-lane arrow curves, custom end caps, bg pat
   assert.equal(out.edgeSnap.w, 260);
 });
 
-test('default language is English for new and legacy states, while an explicit Portuguese choice is kept', () => {
+test('wsResolveArrowEndpoints, wsBuildArrowGeometry, wsResolveArrowStyle, and pair index implement Prompt #10 link spec', () => {
   const ctx = loadBrainAndAudioContext();
   const out = JSON.parse(vm.runInContext(`(() => {
-    const res = {};
-    const withSaved = (saved) => {
-      localStorage.getItem = () => (saved === null ? null : JSON.stringify(saved));
-      Store.load();
-      return getLang() + '|' + Store.state.lang;
-    };
-    res.fresh = withSaved(null);
-    res.legacyNoLang = withSaved({ v: 1, appearance: { theme: 'neon' } });
-    res.invalid = withSaved({ v: 1, lang: 'fr' });
-    res.explicitPt = withSaved({ v: 1, lang: 'pt' });
-    res.explicitEn = withSaved({ v: 1, lang: 'en' });
-    return JSON.stringify(res);
+    const epRelates = wsResolveArrowEndpoints({ kind: 'relates', dir: 'none', startCap: 'auto', endCap: 'auto' });
+    const epContrast = wsResolveArrowEndpoints({ kind: 'contrast', dir: 'none', startCap: 'auto', endCap: 'auto' });
+    const epSupports = wsResolveArrowEndpoints({ kind: 'supports', dir: 'forward', startCap: 'auto', endCap: 'auto' });
+    const epSupportsBoth = wsResolveArrowEndpoints({ kind: 'supports', dir: 'both', startCap: 'auto', endCap: 'auto' });
+    const epSequence = wsResolveArrowEndpoints({ kind: 'sequence', dir: 'forward', startCap: 'auto', endCap: 'auto' });
+    const epCustomLegacy = wsResolveArrowEndpoints({ kind: 'supports', dir: 'forward', startCap: 'circle-open', endCap: 'bar' });
+
+    const r1 = { x: 100, y: 100, w: 200, h: 120 };
+    const r2 = { x: 460, y: 100, w: 200, h: 120 };
+
+    const gSCurve = wsBuildArrowGeometry(r1, r2, { routing: 's-curve', startOffset: 0, endOffset: 0, laneOffset: 0 });
+    const gSeq = wsBuildArrowGeometry(r1, r2, { routing: 's-curve', startOffset: 0, endOffset: 2, laneOffset: 0 });
+    const gStraight = wsBuildArrowGeometry(r1, r2, { routing: 'straight', startOffset: 0, endOffset: 0, laneOffset: 0 });
+    const gOrtho = wsBuildArrowGeometry(r1, r2, { routing: 'orthogonal', startOffset: 0, endOffset: 0, laneOffset: 0 });
+    const gOrganicLane = wsBuildArrowGeometry(r1, r2, { routing: 'organic', startOffset: 0, endOffset: 0, laneOffset: 20 });
+
+    const defs = wsNormalizeLinkDefaults({
+      routing: 'orthogonal',
+      types: {
+        supports: { cap: 'diamond', lineStyle: 'dashed', width: 2.5, color: '#5fe3c4' }
+      }
+    });
+    const stInherited = wsResolveArrowStyle({ kind: 'supports', routing: 'auto', lineStyle: 'auto', width: 0, color: '' }, defs);
+    const stOverride = wsResolveArrowStyle({ kind: 'supports', routing: 'straight', lineStyle: 'dotted', width: 3, color: '#ff8fa3' }, defs);
+
+    const pairIdx = wsBuildArrowPairIndex([
+      { id: 'a1', from: 'c1', to: 'c2' },
+      { id: 'a2', from: 'c2', to: 'c1' },
+      { id: 'a3', from: 'c1', to: 'c3' }
+    ]);
+
+    const board = Workspace.normalize({
+      linkDefaults: defs,
+      cards: [
+        { id: 'c1', type: 'note', x: 0, y: 0, w: 200, h: 120 },
+        { id: 'c2', type: 'note', x: 300, y: 0, w: 200, h: 120 }
+      ],
+      arrows: [{ id: 'a1', from: 'c1', to: 'c2', kind: 'supports', dir: 'forward', routing: 'orthogonal', lineStyle: 'dashed', width: 2.5 }]
+    });
+    const bundle = buildWorkspaceExportBundle({ name: 'TesteLinks', board });
+    const parsed = parseWorkspaceImportBundle(JSON.stringify(bundle));
+    let n = 0;
+    const remapped = remapWorkspaceBundle(parsed, () => 'x_' + (++n));
+
+    return JSON.stringify({
+      epRelates, epContrast, epSupports, epSupportsBoth, epSequence, epCustomLegacy,
+      gSCurve, gSeq, gStraight, gOrtho, gOrganicLane,
+      stInherited, stOverride,
+      pairCountC1C2: (pairIdx.get(wsArrowCardPairKey('c1', 'c2')) || []).length,
+      pairCountC1C3: (pairIdx.get(wsArrowCardPairKey('c1', 'c3')) || []).length,
+      roundtripDefs: remapped.board.linkDefaults,
+      roundtripArrow: remapped.board.arrows[0]
+    });
   })()`, ctx));
 
-  assert.equal(out.fresh, 'en|en');
-  assert.equal(out.legacyNoLang, 'en|en');
-  assert.equal(out.invalid, 'en|en');
-  assert.equal(out.explicitPt, 'pt|pt');
-  assert.equal(out.explicitEn, 'en|en');
+  assert.equal(out.epRelates.start.shape, 'circle');
+  assert.equal(out.epRelates.start.mode, 'open');
+  assert.equal(out.epRelates.end.shape, 'circle');
+  assert.equal(out.epRelates.end.mode, 'open');
+
+  assert.equal(out.epContrast.start.shape, 'square');
+  assert.equal(out.epContrast.start.mode, 'open');
+  assert.equal(out.epContrast.end.shape, 'square');
+  assert.equal(out.epContrast.end.mode, 'open');
+
+  assert.equal(out.epSupports.start.shape, 'diamond');
+  assert.equal(out.epSupports.start.mode, 'open');
+  assert.equal(out.epSupports.end.shape, 'diamond');
+  assert.equal(out.epSupports.end.mode, 'core');
+
+  assert.equal(out.epSupportsBoth.start.mode, 'core');
+  assert.equal(out.epSupportsBoth.end.mode, 'core');
+
+  assert.equal(out.epSequence.start.shape, 'none');
+  assert.equal(out.epSequence.end.shape, 'arrow');
+  assert.equal(out.epSequence.end.outsideOffset, 2);
+
+  assert.equal(out.epCustomLegacy.start.shape, 'circle');
+  assert.equal(out.epCustomLegacy.start.mode, 'open');
+  assert.equal(out.epCustomLegacy.end.shape, 'bar');
+
+  assert.equal(out.gSCurve.x1, 300);
+  assert.equal(out.gSCurve.x2, 460);
+  assert.equal(out.gSeq.x2, 458);
+  assert.equal(out.gStraight.x1, 300);
+  assert.ok(out.gStraight.d.includes(' L'));
+  assert.ok(out.gOrtho.d.includes(' L'));
+  assert.equal(out.gOrganicLane.x1, 300);
+  assert.equal(out.gOrganicLane.x2, 460);
+  assert.ok(out.gSCurve.ly < out.gSCurve.my);
+
+  assert.equal(out.stInherited.routing, 'orthogonal');
+  assert.equal(out.stInherited.lineStyle, 'dashed');
+  assert.equal(out.stInherited.width, 2.5);
+  assert.equal(out.stInherited.color, '#5fe3c4');
+  assert.ok(out.stInherited.dashArray.length > 0);
+  assert.equal(out.stOverride.routing, 'straight');
+  assert.equal(out.stOverride.lineStyle, 'dotted');
+  assert.equal(out.stOverride.width, 3);
+  assert.equal(out.stOverride.color, '#ff8fa3');
+
+  assert.equal(out.pairCountC1C2, 2);
+  assert.equal(out.pairCountC1C3, 1);
+  assert.equal(out.roundtripDefs.routing, 'orthogonal');
+  assert.equal(out.roundtripDefs.types.supports.lineStyle, 'dashed');
+  assert.equal(out.roundtripArrow.routing, 'orthogonal');
+  assert.equal(out.roundtripArrow.lineStyle, 'dashed');
+  assert.equal(out.roundtripArrow.width, 2.5);
 });
 
-test('i18n supports switching to English across workspace, arrow caps, bg patterns, and audio tracks', () => {
+test('ws-math handles escaped dollars, multi-line display math, aligned/array environments, and overset/xrightarrow', () => {
+  const ctx = loadBrainAndAudioContext();
+  const out = JSON.parse(vm.runInContext(`(() => {
+    const escapedPrice = wsHasMathDelimiters('Preço \\\\$10 e \\\\$20');
+    const escapedRender = wsRenderTextWithMath('Total \\\\$50 para $x \\\\leqslant y$');
+    const multiDisplay = wsRenderTextWithMath('$$a = 1 \\\\\\\\ b = 2$$');
+    const alignedEnv = wsRenderTextWithMath('$$\\\\begin{aligned} x &= 1 \\\\\\\\ y &= 2 \\\\\\\\end{aligned}$$');
+    const arrayEnv = wsRenderTextWithMath('$$\\\\begin{array}{lc} A & 1 \\\\\\\\ B & 2 \\\\\\\\end{array}$$');
+    const arrowsOps = wsRenderTextWithMath("$\\\\overset{def}{=} \\\\underset{x\\\\to 0}{\\\\lim} \\\\xrightarrow[baixo]{acima} f''(x)$");
+    return JSON.stringify({ escapedPrice, escapedRender, multiDisplay, alignedEnv, arrayEnv, arrowsOps });
+  })()`, ctx));
+
+  assert.equal(out.escapedPrice, false);
+  assert.ok(out.escapedRender.includes('$50'));
+  assert.ok(out.escapedRender.includes('⩽'));
+  assert.ok(out.multiDisplay.includes('ws-m-dline'));
+  assert.ok(out.alignedEnv.includes('ws-m-aligned'));
+  assert.ok(out.arrayEnv.includes('ws-m-col-l') && out.arrayEnv.includes('ws-m-col-c'));
+  assert.ok(out.arrowsOps.includes('ws-m-limits') && out.arrowsOps.includes('ws-m-xarrow') && out.arrowsOps.includes('″'));
+});
+
+test('i18n supports switching to English across workspace, arrow caps, routings, link defaults, bg patterns, and audio tracks', () => {
   const ctx = loadBrainAndAudioContext();
   const out = JSON.parse(vm.runInContext(`(() => {
     Store.load();
@@ -505,6 +618,10 @@ test('i18n supports switching to English across workspace, arrow caps, bg patter
       brand: wsTr('ws.brand'),
       bgLines: wsTr('ws.bg.lines'),
       capCircle: wsTr('ws.arrow.capCircle'),
+      seqLabel: wsTr('ws.arrow.sequence'),
+      orthoLabel: wsTr('ws.arrow.routing.orthogonal'),
+      advLabel: wsTr('ws.arrow.advanced'),
+      linkDefsTitle: wsTr('ws.linkDefsPopTitle'),
       mathTitle: wsTr('ws.mathInsertTitle'),
       groupHint: wsTr('ws.groupHint'),
       typingLabel: getTrackLabel('typing'),
@@ -517,10 +634,218 @@ test('i18n supports switching to English across workspace, arrow caps, bg patter
   assert.equal(out.brand, 'Workspace');
   assert.equal(out.bgLines, 'Lines');
   assert.equal(out.capCircle, 'Circle');
+  assert.equal(out.seqLabel, 'Sequence');
+  assert.equal(out.orthoLabel, 'Orthogonal');
+  assert.equal(out.advLabel, 'Advanced');
+  assert.equal(out.linkDefsTitle, 'Link settings');
   assert.ok(out.mathTitle.includes('LaTeX'));
   assert.ok(out.groupHint.includes('Alt'));
   assert.equal(out.typingLabel, 'Taps');
   assert.equal(out.keysLabel, 'Keys');
   assert.equal(out.writingLabel, 'Writing');
 });
+
+test('ws-math validates syntax errors and preserves lastValidHtml fallback cleanly', () => {
+  const ctx = loadBrainAndAudioContext();
+  const out = JSON.parse(vm.runInContext(`(() => {
+    const empty = wsValidateTex('   ');
+    const badBraces = wsValidateTex('\\\\frac{a}{b');
+    const badDelim = wsValidateTex('\\\\left( x + 1');
+    const badEnv = wsValidateTex('\\\\begin{aligned} x &= 1');
+    const badArg = wsValidateTex('\\\\frac{a}');
+    const badScript = wsValidateTex('x^');
+    const badCmd = wsValidateTex('x + \\\\');
+
+    const okFrac = wsValidateTex('\\\\frac{\\\\alpha}{2} + x^2');
+    const okAligned = wsValidateTex('\\\\begin{aligned} x &= 1 \\\\\\\\ y &= 2 \\\\end{aligned}');
+    const okFence = wsValidateTex('\\\\left( x \\\\right.');
+
+    const safeValid = wsRenderTexSafe('\\\\frac{a}{b}', false, '');
+    const safeInvalidWithFallback = wsRenderTexSafe('\\\\frac{a}{', false, safeValid.innerHtml);
+    const safeInvalidNoFallback = wsRenderTexSafe('\\\\frac{a}{', true, '');
+
+    return JSON.stringify({
+      empty, badBraces, badDelim, badEnv, badArg, badScript, badCmd,
+      okFrac, okAligned, okFence,
+      safeValid, safeInvalidWithFallback, safeInvalidNoFallback
+    });
+  })()`, ctx));
+
+  assert.equal(out.empty.valid, false);
+  assert.equal(out.empty.isEmpty, true);
+  assert.equal(out.empty.code, 'empty');
+
+  assert.equal(out.badBraces.valid, false);
+  assert.equal(out.badBraces.code, 'braces');
+
+  assert.equal(out.badDelim.valid, false);
+  assert.equal(out.badDelim.code, 'delim');
+
+  assert.equal(out.badEnv.valid, false);
+  assert.equal(out.badEnv.code, 'env');
+
+  assert.equal(out.badArg.valid, false);
+  assert.equal(out.badArg.code, 'arg');
+
+  assert.equal(out.badScript.valid, false);
+  assert.equal(out.badScript.code, 'script');
+
+  assert.equal(out.badCmd.valid, false);
+  assert.equal(out.badCmd.code, 'cmd');
+
+  assert.equal(out.okFrac.valid, true);
+  assert.equal(out.okAligned.valid, true);
+  assert.equal(out.okFence.valid, true);
+
+  assert.equal(out.safeValid.valid, true);
+  assert.equal(out.safeValid.usedFallback, false);
+  assert.ok(out.safeValid.html.includes('data-tex="\\\\frac{a}{b}"') || out.safeValid.html.includes('data-tex="\\frac{a}{b}"'));
+  assert.ok(out.safeValid.html.includes('data-display="0"'));
+  assert.ok(out.safeValid.innerHtml.includes('ws-m-frac'));
+
+  assert.equal(out.safeInvalidWithFallback.valid, false);
+  assert.equal(out.safeInvalidWithFallback.usedFallback, true);
+  assert.equal(out.safeInvalidWithFallback.code, 'arg');
+  assert.equal(out.safeInvalidWithFallback.html, out.safeValid.innerHtml);
+
+  assert.equal(out.safeInvalidNoFallback.valid, false);
+  assert.equal(out.safeInvalidNoFallback.usedFallback, false);
+  assert.equal(out.safeInvalidNoFallback.html, '');
+});
+
+test('ws-brain compacts, sanitizes, and extracts plain text from ws-math-slot spans cleanly', () => {
+  const ctx = loadBrainAndAudioContext();
+  const out = JSON.parse(vm.runInContext(`(() => {
+    const inlineRich = '<div>Valor <span class="ws-math-slot ws-math-editing" contenteditable="false" data-tex="\\\\frac{a}{b}" data-display="0"><span class="ws-math-inline"><span class="ws-m-frac"><span class="ws-m-num">a</span><span class="ws-m-den">b</span></span></span></span> ok</div>';
+    const blockRich = '<div><span class="ws-math-slot" contenteditable="false" data-tex="x^2 + y^2 = z^2" data-display="1"><div class="ws-math-display">x² + y² = z²</div></span></div><script>alert(1)</script>';
+    const sanitizedInline = wsSanitizeNoteHtml(inlineRich);
+    const sanitizedBlock = wsSanitizeNoteHtml(blockRich);
+    const plainInline = wsNoteHtmlToPlainText(inlineRich);
+    const plainBlock = wsNoteHtmlToPlainText(blockRich);
+    return JSON.stringify({ sanitizedInline, sanitizedBlock, plainInline, plainBlock });
+  })()`, ctx));
+
+  assert.ok(!out.sanitizedInline.includes('ws-math-editing'));
+  assert.ok(!out.sanitizedInline.includes('ws-m-frac'));
+  assert.ok(out.sanitizedInline.includes('<span class="ws-math-slot" contenteditable="false" data-tex="\\frac{a}{b}" data-display="0">$\\frac{a}{b}$</span>'));
+
+  assert.ok(!out.sanitizedBlock.includes('<script>'));
+  assert.ok(out.sanitizedBlock.includes('<span class="ws-math-slot" contenteditable="false" data-tex="x^2 + y^2 = z^2" data-display="1">$$x^2 + y^2 = z^2$$</span>'));
+
+  assert.equal(out.plainInline, 'Valor $\\frac{a}{b}$ ok');
+  assert.equal(out.plainBlock, '$$x^2 + y^2 = z^2$$');
+});
+
+test('i18n includes PT and EN translations for live math widget and reorganized link settings', () => {
+  const ctx = loadBrainAndAudioContext();
+  const out = JSON.parse(vm.runInContext(`(() => {
+    Store.load();
+    I18n.setLang('pt');
+    const pt = {
+      mathBoxLabel: wsTr('ws.mathBoxLabel'),
+      mathErrPrefix: wsTr('ws.mathErrPrefix'),
+      mathErrBraces: wsTr('ws.mathErr.braces'),
+      linkDefsSemanticTypes: wsTr('ws.linkDefsSemanticTypes'),
+      seqCapsNote: wsTr('ws.arrow.seqCapsNote')
+    };
+    I18n.setLang('en');
+    const en = {
+      mathBoxLabel: wsTr('ws.mathBoxLabel'),
+      mathErrPrefix: wsTr('ws.mathErrPrefix'),
+      mathErrBraces: wsTr('ws.mathErr.braces'),
+      linkDefsSemanticTypes: wsTr('ws.linkDefsSemanticTypes'),
+      seqCapsNote: wsTr('ws.arrow.seqCapsNote')
+    };
+    return JSON.stringify({ pt, en });
+  })()`, ctx));
+
+  assert.equal(out.pt.mathBoxLabel, 'Fórmula');
+  assert.ok(out.pt.mathErrPrefix.includes('Mantendo'));
+  assert.ok(out.pt.mathErrBraces.includes('{ }'));
+  assert.ok(out.pt.linkDefsSemanticTypes.includes('Pontas'));
+  assert.ok(out.pt.seqCapsNote.includes('Sequência'));
+
+  assert.equal(out.en.mathBoxLabel, 'Formula');
+  assert.ok(out.en.mathErrPrefix.includes('Showing'));
+  assert.ok(out.en.mathErrBraces.includes('{ }'));
+  assert.ok(out.en.linkDefsSemanticTypes.includes('Configurable'));
+  assert.ok(out.en.seqCapsNote.includes('Sequence'));
+});
+
+test('ws-brain supports stroke hit-testing, selection box hit check, and drift-free batch stroke offsets', () => {
+  const ctx = loadBrainAndAudioContext();
+  const out = JSON.parse(vm.runInContext(`(() => {
+    const strokes = [
+      { id: 's1', tool: 'pen', size: 4, points: [{ x: 100, y: 100 }, { x: 180, y: 100 }] },
+      { id: 's2', tool: 'marker', size: 12, points: [{ x: 140, y: 80 }, { x: 140, y: 160 }] },
+      { id: 's3', tool: 'pen', size: 3, points: [{ x: 400, y: 400 }, { x: 450, y: 430 }] }
+    ];
+    const hitMid = wsFindStrokeAtPoint(strokes, { x: 105, y: 102 }, 6);
+    const hitOverlap = wsFindStrokeAtPoint(strokes, { x: 140, y: 100 }, 6);
+    const hitMiss = wsFindStrokeAtPoint(strokes, { x: 260, y: 260 }, 6);
+
+    const sel = new Set(['s1', 's2']);
+    const inSel = wsIsPointInStrokeSelection(strokes, sel, { x: 160, y: 140 }, 6);
+    const outSel = wsIsPointInStrokeSelection(strokes, sel, { x: 420, y: 410 }, 6);
+
+    const items = [strokes[0], strokes[1]].map(st => ({
+      stroke: st,
+      origPoints: st.points.map(pt => ({ x: pt.x, y: pt.y }))
+    }));
+    wsApplyStrokeOffsets(items, 12.345, -7.2);
+    wsApplyStrokeOffsets(items, 50, 25);
+
+    return JSON.stringify({
+      hitMidId: hitMid ? hitMid.id : null,
+      hitOverlapId: hitOverlap ? hitOverlap.id : null,
+      hitMiss: !!hitMiss,
+      inSel,
+      outSel,
+      s1Pts: strokes[0].points,
+      s2Pts: strokes[1].points,
+      s3Pts: strokes[2].points
+    });
+  })()`, ctx));
+
+  assert.equal(out.hitMidId, 's1');
+  assert.equal(out.hitOverlapId, 's2');
+  assert.equal(out.hitMiss, false);
+  assert.equal(out.inSel, true);
+  assert.equal(out.outSel, false);
+  assert.deepEqual(out.s1Pts, [{ x: 150, y: 125 }, { x: 230, y: 125 }]);
+  assert.deepEqual(out.s2Pts, [{ x: 190, y: 105 }, { x: 190, y: 185 }]);
+  assert.deepEqual(out.s3Pts, [{ x: 400, y: 400 }, { x: 450, y: 430 }]);
+});
+
+test('Motion.stepAmbientRipples spawns waves slightly more frequently without overflowing cap', () => {
+  const ctx = vm.createContext({
+    console,
+    Math,
+    performance: { now: () => 1000 },
+    window: { innerWidth: 1280, innerHeight: 720, addEventListener: () => {} },
+    document: { addEventListener: () => {}, hidden: false },
+    $: () => ({ getContext: () => ({}), style: {} }),
+    clamp: (v: number, a: number, b: number) => Math.max(a, Math.min(b, v)),
+    lerp: (a: number, b: number, t: number) => a + (b - a) * t
+  });
+  const motionSrc = fs.readFileSync(path.resolve(process.cwd(), 'public/js/motion.js'), 'utf8');
+  vm.runInContext(motionSrc, ctx);
+
+  const count = vm.runInContext(`(() => {
+    Motion.level = 'full';
+    Motion.pAmount = 0.55;
+    Motion.intensity = 0.55;
+    Motion.ambientClock = 0;
+    Motion.ripples = [];
+    for (let i = 0; i < 80; i++) {
+      Motion.stepAmbientRipples(1280, 720);
+    }
+    return Motion.ripples.length;
+  })()`, ctx);
+
+  assert.ok(count >= 1 && count <= 12, 'expected spawned ripples within expected bounds, got ' + count);
+});
+
+
+
 

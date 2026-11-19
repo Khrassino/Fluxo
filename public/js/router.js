@@ -401,6 +401,9 @@ const Router = {
       Store.state.dock.anchor = anchor;
       Store.save();
     }
+    if (typeof Workspace !== 'undefined' && typeof Workspace.syncDockClearance === 'function') {
+      Workspace.syncDockClearance();
+    }
     if (!animate || !fromRect) return;
 
     const target = dock.getBoundingClientRect();
