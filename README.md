@@ -4,6 +4,10 @@ Um espaço de produtividade minimalista, personalizável e leve. O Fluxo reúne 
 
 O projeto possui uma versão web e um aplicativo para Windows, construído com Electron.
 
+## Experimente no navegador
+
+**[Abrir o Fluxo](https://fluxo-phi-eosin.vercel.app/)** — use a versão web diretamente no navegador, sem instalação.
+
 ## Downloads
 
 **[Baixar a versão mais recente em Releases](https://github.com/Khrassino/Fluxo/releases/latest)**
