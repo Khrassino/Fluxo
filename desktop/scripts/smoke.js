@@ -175,6 +175,92 @@ module.exports = function smoke(win, app) {
       })()`);
       check('player de áudio carrega e pula para um ponto', seek.ok === true, seek);
 
+      // --- backup completo: exportar, apagar tudo, importar e conferir que voltou idêntico ---
+      const rt = await run(`(async () => {
+        const out = {};
+        const enc = new TextEncoder();
+        const pdfBytes = enc.encode(${JSON.stringify(MIN_PDF)});
+        const pngBytes = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13]);
+        const wsUp = (db) => {
+          if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta');
+          if (!db.objectStoreNames.contains('files')) db.createObjectStore('files');
+        };
+        const fUp = (db) => { if (!db.objectStoreNames.contains('files')) db.createObjectStore('files'); };
+        const put = (db, store, key, val) => new Promise((res, rej) => {
+          const tx = db.transaction(store, 'readwrite');
+          tx.objectStore(store).put(val, key);
+          tx.oncomplete = () => res();
+          tx.onerror = () => rej(tx.error);
+        });
+        const get = (db, store, key) => new Promise((res, rej) => {
+          const rq = db.transaction(store).objectStore(store).get(key);
+          rq.onsuccess = () => res(rq.result);
+          rq.onerror = () => rej(rq.error);
+        });
+        const wsDb = await backupOpenIdb('fluxo-workspace', wsUp);
+        const fDb = await backupOpenIdb('fluxo-files', fUp);
+        if (!wsDb || !fDb) return { error: 'não abriu os bancos' };
+
+        // 1) dados de teste: nota, PDF e imagem do quadro, arquivo solto, chaves do localStorage e estado
+        await put(wsDb, 'meta', 'smoke-note', { text: 'olá mundo', n: [1, 2, 3] });
+        await put(wsDb, 'files', 'smoke-pdf', pdfBytes.buffer.slice(0));
+        await put(wsDb, 'files', 'smoke-img', new Blob([pngBytes], { type: 'image/png' }));
+        await put(fDb, 'files', 'smoke-file', pdfBytes.buffer.slice(0));
+        localStorage.setItem('fluxo-ws-smoke', '{"a":1}');
+        localStorage.setItem('fluxo-file-smoke', 'data:text/plain;base64,QQ==');
+        Store.state.smokeMarker = 'estado-ok';
+        Store.save();
+
+        // 2) exporta e passa pelo mesmo caminho do arquivo .json real (texto -> JSON)
+        const payload = await AppBackup.collect();
+        const text = JSON.stringify(payload);
+        out.version = payload.version;
+        out.jsonKB = Math.round(text.length / 1024);
+
+        // 3) apaga tudo
+        await backupReplaceStore(wsDb, 'meta', {});
+        await backupReplaceStore(wsDb, 'files', {});
+        await backupReplaceStore(fDb, 'files', {});
+        localStorage.removeItem('fluxo-ws-smoke');
+        localStorage.removeItem('fluxo-file-smoke');
+        const st = JSON.parse(localStorage.getItem('fluxo-state-v1'));
+        delete st.smokeMarker;
+        localStorage.setItem('fluxo-state-v1', JSON.stringify(st));
+        out.wipedOk = (await get(wsDb, 'meta', 'smoke-note')) === undefined &&
+                      (await get(wsDb, 'files', 'smoke-pdf')) === undefined &&
+                      (await get(fDb, 'files', 'smoke-file')) === undefined &&
+                      localStorage.getItem('fluxo-ws-smoke') === null;
+
+        // 4) importa
+        const parsed = parseAndValidateBackup(text);
+        out.parsedOk = parsed.ok === true && parsed.isLegacyStateOnly === false;
+        await AppBackup.restore(parsed);
+
+        // 5) confere
+        const note = await get(wsDb, 'meta', 'smoke-note');
+        const pdf = await get(wsDb, 'files', 'smoke-pdf');
+        const img = await get(wsDb, 'files', 'smoke-img');
+        const file = await get(fDb, 'files', 'smoke-file');
+        out.note = !!note && note.text === 'olá mundo' && note.n.join() === '1,2,3';
+        out.pdf = pdf instanceof ArrayBuffer && pdf.byteLength === pdfBytes.length &&
+                  new TextDecoder().decode(new Uint8Array(pdf)) === ${JSON.stringify(MIN_PDF)};
+        out.img = img instanceof Blob && img.type === 'image/png' && img.size === pngBytes.length;
+        out.file = file instanceof ArrayBuffer && file.byteLength === pdfBytes.length;
+        out.ls = localStorage.getItem('fluxo-ws-smoke') === '{"a":1}' &&
+                 localStorage.getItem('fluxo-file-smoke') === 'data:text/plain;base64,QQ==';
+        out.state = JSON.parse(localStorage.getItem('fluxo-state-v1')).smokeMarker === 'estado-ok';
+
+        // 6) entradas inválidas e backups antigos
+        const bad1 = parseAndValidateBackup('isto não é json');
+        const bad2 = parseAndValidateBackup({ app: 'Outro', state: {} });
+        const legacy = parseAndValidateBackup({ app: 'Fluxo', version: 1, state: {} });
+        out.rejectsBad = bad1.ok === false && bad2.ok === false && bad2.errorKey === 'panel.general.importNotFluxo';
+        out.acceptsLegacy = legacy.ok === true && legacy.isLegacyStateOnly === true;
+        return out;
+      })()`);
+      const rtKeys = ['wipedOk', 'parsedOk', 'note', 'pdf', 'img', 'file', 'ls', 'state', 'rejectsBad', 'acceptsLegacy'];
+      check('backup completo: exportar, apagar e importar devolve tudo', !rt.error && rtKeys.every((k) => rt[k] === true), rt);
+
       // --- exportação de backup ---
       await run('TrackerPage.exportData()');
       for (let i = 0; i < 30 && !downloaded; i++) await sleep(200);
