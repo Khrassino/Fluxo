@@ -3,6 +3,32 @@
 
 const WS_CARD_TYPES = ['note', 'concept', 'checklist', 'group', 'pdf', 'image'];
 
+const WS_CARD_EDITABLE_SELECTOR = [
+  '.ws-note-body',
+  '.ws-formula-input',
+  '.ws-concept-title',
+  '.ws-concept-tags-inp',
+  '.ws-check-title',
+  '.ws-check-item-txt',
+  '.ws-check-add input',
+  '.ws-group-title',
+  '.ws-pdf-sinput'
+].join(', ');
+
+function wsCanEditCard(opts) {
+  if (!opts || !opts.cardId) return false;
+  if (opts.drawMode || opts.selectMode || opts.linkFrom) return false;
+  const ids = opts.selectedIds;
+  if (!ids) return false;
+  if (typeof ids.has === 'function') {
+    return ids.size === 1 && ids.has(opts.cardId);
+  }
+  if (Array.isArray(ids)) {
+    return ids.length === 1 && ids[0] === opts.cardId;
+  }
+  return false;
+}
+
 const WS_CARD_TINTS = [
   { id: '',       label: 'Padrão', color: '' },
   { id: 'blue',   label: 'Azul',   color: '#6e8efb' },
@@ -755,6 +781,65 @@ function wsGroupChildIds(cards, groupCard) {
     if (cx >= gx1 && cx <= gx2 && cy >= gy1 && cy <= gy2) ids.push(c.id);
   }
   return ids;
+}
+
+function wsSelectGroupableCards(cards, selectedIds) {
+  if (!Array.isArray(cards) || !selectedIds) return [];
+  const selSet = selectedIds instanceof Set ? selectedIds : new Set(Array.isArray(selectedIds) ? selectedIds : []);
+  if (!selSet.size) return [];
+  const out = [];
+  for (let i = 0; i < cards.length; i++) {
+    const c = cards[i];
+    if (!c || !c.id || c.type === 'group' || !selSet.has(c.id)) continue;
+    if (!Number.isFinite(c.x) || !Number.isFinite(c.y)) continue;
+    out.push(c);
+  }
+  return out;
+}
+
+function wsCountGroupableCards(cards, selectedIds) {
+  return wsSelectGroupableCards(cards, selectedIds).length;
+}
+
+function wsComputeGroupBounds(cards, selectedIds, opts) {
+  const items = wsSelectGroupableCards(cards, selectedIds);
+  if (items.length < 2) return null;
+  opts = opts || {};
+  const padX = Number.isFinite(opts.padX) ? opts.padX : 24;
+  const padTop = Number.isFinite(opts.padTop) ? opts.padTop : 64;
+  const padBottom = Number.isFinite(opts.padBottom) ? opts.padBottom : 46;
+  const minW = Number.isFinite(opts.minW) ? opts.minW : 280;
+  const minH = Number.isFinite(opts.minH) ? opts.minH : 180;
+  const maxW = Number.isFinite(opts.maxW) ? opts.maxW : 4800;
+  const maxH = Number.isFinite(opts.maxH) ? opts.maxH : 4800;
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  const childIds = [];
+
+  for (let i = 0; i < items.length; i++) {
+    const c = items[i];
+    const cw = Math.max(1, Number(c.w) || 0);
+    const ch = Math.max(1, Number(c.h) || 0);
+    if (c.x < minX) minX = c.x;
+    if (c.y < minY) minY = c.y;
+    if (c.x + cw > maxX) maxX = c.x + cw;
+    if (c.y + ch > maxY) maxY = c.y + ch;
+    childIds.push(c.id);
+  }
+
+  const rawW = (maxX - minX) + padX * 2;
+  const rawH = (maxY - minY) + padTop + padBottom;
+  const w = Math.min(maxW, Math.max(minW, Math.round(rawW)));
+  const h = Math.min(maxH, Math.max(minH, Math.round(rawH)));
+  const extraX = Math.max(0, (w - rawW) / 2);
+  const extraY = Math.max(0, (h - rawH) / 2);
+  const x = Math.round(minX - padX - extraX);
+  const y = Math.round(minY - padTop - extraY);
+
+  return { x, y, w, h, childIds };
 }
 
 function wsExtractSnippet(rawText, normQuery) {
@@ -1707,6 +1792,8 @@ if (typeof module !== 'undefined' && module.exports) {
     wsCardDisplayTitle,
     wsGetCardConnections,
     wsGroupChildIds,
+    wsCountGroupableCards,
+    wsComputeGroupBounds,
     wsSearchBoard,
     wsSearchPdfPages,
     wsRectsIntersect,

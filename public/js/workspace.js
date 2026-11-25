@@ -41,7 +41,10 @@ function wsCursorCss() {
   return wsHandCursorCss(false);
 }
 
-const WS_BG_SWATCHES = ['', '#0b0f1a', '#121826', '#1b1b24', '#22252e', '#f4f1ea', '#e9eef7', '#dce8e4', '#f3e6df'];
+const WS_BG_SWATCHES = [
+  '',        '#0b0f1a', '#121826', '#1b1b24', '#22252e', '#111d1a', '#201815',
+  '#f7f8fb', '#f4f1ea', '#e9eef7', '#dce8e4', '#f3e6df', '#ebe7f5', '#f2edd7'
+];
 
 const WS_HL_COLORS = [
   { id: 'yellow', label: 'Amarelo', value: '#ffd84d' },
@@ -468,13 +471,14 @@ const Workspace = {
         const type = c.type;
         const defW = type === 'pdf' ? 540 : (type === 'image' ? 380 : (type === 'group' ? 440 : (type === 'concept' ? 310 : (type === 'checklist' ? 300 : 280))));
         const defH = type === 'pdf' ? 700 : (type === 'image' ? 300 : (type === 'group' ? 320 : (type === 'concept' ? 230 : (type === 'checklist' ? 250 : 170))));
+        const maxDim = type === 'group' ? 4800 : 2400;
         const card = {
           id: String(c.id),
           type,
           x: wsNum(c.x, 0),
           y: wsNum(c.y, 0),
-          w: clamp(wsNum(c.w, defW), 190, 2400),
-          h: clamp(wsNum(c.h, defH), 96, 2400)
+          w: clamp(wsNum(c.w, defW), 190, maxDim),
+          h: clamp(wsNum(c.h, defH), 96, maxDim)
         };
         if (card.type === 'pdf') {
           card.pdfId = String(c.pdfId);
@@ -1122,7 +1126,7 @@ const Workspace = {
     this.touchPtrs.clear();
     this.touchPinch = null;
     if (this.els.shell) this.els.shell.classList.remove('selecting', 'space-pan', 'dragging-card');
-    if (this.els.viewport) this.els.viewport.classList.remove('stroke-sel-hover');
+    if (this.els.viewport) this.els.viewport.classList.remove('stroke-sel-hover', 'marqueeing', 'panning');
     if (this.els.marquee) this.els.marquee.hidden = true;
     if (this.els.multiTools) { this.els.multiTools.hidden = true; this.els.multiTools.innerHTML = ''; }
     if (this.els.arrowTools) { this.els.arrowTools.hidden = true; this.els.arrowTools.innerHTML = ''; }
@@ -1557,6 +1561,7 @@ const Workspace = {
   openConfirm(opts) {
     this.closePopover();
     this.closeTimerSettings();
+    this.blurCardInputs();
     return new Promise((resolve) => {
       let done = false;
       const finish = (ok) => {
@@ -1608,11 +1613,11 @@ const Workspace = {
       '<button type="button" class="ws-pop-chip' + (pattern === p.id ? ' active' : '') + '" data-bgpattern="' + p.id + '">' + wsEscape(wsTr(p.key, null, p.def)) + '</button>'
     ).join('');
 
-    let html = '<div class="ws-popover"><p class="ws-pop-title">' + wsEscape(wsTr('ws.bgPopTitle', null, 'Fundo da área')) + '</p>' +
+    let html = '<div class="ws-popover ws-bg-pop"><p class="ws-pop-title">' + wsEscape(wsTr('ws.bgPopTitle', null, 'Fundo da área')) + '</p>' +
       '<div class="ws-pop-sub" style="margin-top:0">' + wsEscape(wsTr('ws.bgPatternSub', null, 'Padrão da área')) + '</div>' +
       '<div class="ws-pop-row">' + patternBtns + '</div>' +
       '<div class="ws-pop-sub">' + wsEscape(wsTr('ws.bgSolidSub', null, 'Cor sólida')) + '</div>' +
-      '<div class="ws-color-grid">';
+      '<div class="ws-color-grid ws-bg-color-grid">';
     WS_BG_SWATCHES.forEach(c => {
       const val = c || '';
       const bgc = c || 'var(--bg)';
@@ -1895,6 +1900,7 @@ const Workspace = {
   },
 
   openSearchPopover() {
+    this.blurCardInputs();
     if (this.popover === 'search') {
       const inp = this.els.popovers.querySelector('[data-wssearch]');
       if (inp) { inp.focus(); inp.select(); }
@@ -2452,7 +2458,8 @@ const Workspace = {
       const stage = el('div', 'ws-note-stage');
       const textPane = el('div', 'ws-note-text-pane');
       const body = el('div', 'ws-note-body');
-      body.contentEditable = 'true';
+      body.contentEditable = 'false';
+      body.tabIndex = -1;
       body.spellcheck = false;
       body.dataset.placeholder = wsTr('ws.notePlaceholder', null, 'Escreva algo…');
       const mathView = el('div', 'ws-note-math-view');
@@ -2578,11 +2585,14 @@ const Workspace = {
         node.classList.remove('formula-open');
         commitNoteContent();
         requestAnimationFrame(() => this.updateArrowsFor(card.id));
-        if (opts.focusBody) {
+        if (opts.focusBody && this.isCardEditable(card.id)) {
           body.focus();
         } else if (opts.previewIfBlurred && document.activeElement !== body) {
           renderNoteMathPreview();
         }
+      };
+      node._closeFormulaBox = () => {
+        if (!fUi.box.hidden) closeFormulaBox({ focusBody: false, previewIfBlurred: true });
       };
 
       const openFormulaForSlot = (slot, selectText) => {
@@ -2774,12 +2784,20 @@ const Workspace = {
       });
 
       editBar.addEventListener('pointerdown', (e) => {
+        if (!e.shiftKey && (!this.selectedIds.has(card.id) || this.selectedIds.size !== 1)) {
+          node._blockEditClick = true;
+          this.select(card.id);
+        }
         e.stopPropagation();
         if (!e.target.closest('select')) e.preventDefault();
       });
 
       editBar.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (!this.isCardEditable(card.id) || node._blockEditClick) {
+          node._blockEditClick = false;
+          return;
+        }
         const cmdBtn = e.target.closest('[data-notecmd]');
         if (cmdBtn) {
           ensureBodyFocusCaret();
@@ -2892,6 +2910,10 @@ const Workspace = {
 
       mathView.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (!this.isCardEditable(card.id) || node._blockEditClick) {
+          node._blockEditClick = false;
+          return;
+        }
         const mathEl = e.target.closest('.ws-math-inline[data-tex], .ws-math-display[data-tex]');
         if (mathEl) {
           const allMath = Array.from(mathView.querySelectorAll('.ws-math-inline[data-tex], .ws-math-display[data-tex]'));
@@ -2915,6 +2937,10 @@ const Workspace = {
         if (slot) {
           e.preventDefault();
           e.stopPropagation();
+          if (!this.isCardEditable(card.id) || node._blockEditClick) {
+            node._blockEditClick = false;
+            return;
+          }
           openFormulaForSlot(slot, false);
         }
       });
@@ -2923,6 +2949,10 @@ const Workspace = {
         syncToolbar();
       });
       body.addEventListener('focus', () => {
+        if (!this.isCardEditable(card.id)) {
+          body.blur();
+          return;
+        }
         mathView.hidden = true;
         stage.classList.remove('showing-math');
         syncToolbar();
@@ -2932,6 +2962,7 @@ const Workspace = {
           if (!fUi.box.hidden && fUi.box.contains(document.activeElement)) return;
           commitNoteContent();
           renderNoteMathPreview();
+          syncToolbar();
         }, 0);
       });
       body.addEventListener('keydown', (e) => {
@@ -3230,11 +3261,15 @@ const Workspace = {
         node.classList.remove('formula-open');
         renderConceptMathPreview();
         requestAnimationFrame(() => this.updateArrowsFor(card.id));
-        if (opts.focusBody) body.focus();
+        if (opts.focusBody && this.isCardEditable(card.id)) body.focus();
+      };
+      node._closeFormulaBox = () => {
+        if (!fBox.hidden) closeConceptFormulaBox({ focusBody: false });
       };
 
       mathBtn.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (!this.isCardEditable(card.id)) return;
         const curText = card.text || '';
         const s = typeof body.selectionStart === 'number' ? body.selectionStart : curText.length;
         const end = typeof body.selectionEnd === 'number' ? body.selectionEnd : s;
@@ -3291,6 +3326,10 @@ const Workspace = {
 
       mathView.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (!this.isCardEditable(card.id) || node._blockEditClick) {
+          node._blockEditClick = false;
+          return;
+        }
         const mathEl = e.target.closest('.ws-math-inline[data-tex], .ws-math-display[data-tex]');
         if (mathEl) {
           const allMath = Array.from(mathView.querySelectorAll('.ws-math-inline[data-tex], .ws-math-display[data-tex]'));
@@ -3365,7 +3404,6 @@ const Workspace = {
       titleInp.placeholder = wsTr('ws.checkTitlePh', null, 'Checklist de estudo…');
       titleInp.value = card.title || '';
       titleInp.maxLength = 120;
-      titleInp.addEventListener('pointerdown', (e) => e.stopPropagation());
       titleInp.addEventListener('input', () => {
         card.title = titleInp.value;
         this.scheduleSave();
@@ -3409,6 +3447,9 @@ const Workspace = {
           txt.className = 'ws-check-item-txt';
           txt.value = it.text || '';
           txt.maxLength = 240;
+          const itemEditable = this.isCardEditable(card.id);
+          txt.readOnly = !itemEditable;
+          txt.tabIndex = itemEditable ? 0 : -1;
           txt.addEventListener('input', () => {
             it.text = txt.value;
             this.scheduleSave();
@@ -3428,6 +3469,7 @@ const Workspace = {
 
       addForm.addEventListener('submit', (e) => {
         e.preventDefault();
+        if (!this.isCardEditable(card.id)) return;
         const inp = addForm.querySelector('input');
         const txt = (inp && inp.value || '').trim();
         if (!txt) return;
@@ -3447,7 +3489,6 @@ const Workspace = {
       titleInp.placeholder = wsTr('ws.groupTitlePh', null, 'Nome do grupo…');
       titleInp.value = card.title || '';
       titleInp.maxLength = 120;
-      titleInp.addEventListener('pointerdown', (e) => e.stopPropagation());
       titleInp.addEventListener('input', () => {
         card.title = titleInp.value;
         this.scheduleSave();
@@ -3639,7 +3680,12 @@ const Workspace = {
 
       const sInput = searchBar.querySelector('.ws-pdf-sinput');
       let pdfSearchTimer = null;
-      searchBar.addEventListener('pointerdown', (e) => e.stopPropagation());
+      searchBar.addEventListener('pointerdown', (e) => {
+        if (!e.shiftKey && (!this.selectedIds.has(card.id) || this.selectedIds.size !== 1)) {
+          this.select(card.id);
+        }
+        e.stopPropagation();
+      });
       searchBar.addEventListener('click', (e) => {
         e.stopPropagation();
         const act = e.target.closest('[data-pdfsact]');
@@ -3679,9 +3725,19 @@ const Workspace = {
         '<button type="button" class="ws-pdf-modebtn" data-pdfact="rotate" title="' + wsEscape(wsTr('ws.pdf.rotateTip', null, 'Girar página 90°')) + '">' + svgIcon('rotate') + '<span>' + wsEscape(wsTr('ws.pdf.rotate', null, 'Girar')) + '</span></button>' +
         '<span class="ws-pdf-edithint">' + wsEscape(wsTr('ws.pdf.rightHint', null, 'botão direito mexe')) + '</span>';
 
-      editBar.addEventListener('pointerdown', (e) => e.stopPropagation());
+      editBar.addEventListener('pointerdown', (e) => {
+        if (!e.shiftKey && (!this.selectedIds.has(card.id) || this.selectedIds.size !== 1)) {
+          node._blockEditClick = true;
+          this.select(card.id);
+        }
+        e.stopPropagation();
+      });
       editBar.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (!this.isCardEditable(card.id) || node._blockEditClick) {
+          node._blockEditClick = false;
+          return;
+        }
         const modeBtn = e.target.closest('[data-pdfmode]');
         if (modeBtn) {
           this.setPdfMode(card, modeBtn.dataset.pdfmode);
@@ -3768,17 +3824,41 @@ const Workspace = {
     });
 
     node.addEventListener('pointerdown', (e) => {
+      node._wasEditableOnDown = this.isCardEditable(card.id);
+      const editSel = typeof WS_CARD_EDITABLE_SELECTOR === 'string'
+        ? WS_CARD_EDITABLE_SELECTOR
+        : '.ws-note-body, .ws-formula-input, .ws-concept-title, .ws-concept-tags-inp, .ws-check-title, .ws-check-item-txt, .ws-check-add input, .ws-group-title, .ws-pdf-sinput';
+      const editHit = e.target && e.target.closest
+        ? e.target.closest(editSel + ', .ws-note-math-view, .ws-math-slot')
+        : null;
+      node._blockEditClick = !!(!node._wasEditableOnDown && editHit);
+      if (!node._wasEditableOnDown && editHit) {
+        e.preventDefault();
+      } else if (node._wasEditableOnDown && !editHit) {
+        const keepFocusHit = e.target && e.target.closest
+          ? e.target.closest('.ws-note-editbar, .ws-formula-box, button, select')
+          : null;
+        if (!keepFocusHit) {
+          this.blurCardInputs(card.id);
+        }
+      }
+    }, true);
+
+    node.addEventListener('pointerdown', (e) => {
       if (e.shiftKey) {
         this.select(card.id, { toggle: true });
         return;
       }
-      if (!this.selectedIds.has(card.id) || this.selectedIds.size <= 1) {
+      if (!this.selectedIds.has(card.id) || this.selectedIds.size !== 1) {
         this.select(card.id);
+      } else {
+        this.syncCardEditability();
       }
     });
     this.els.world.append(node);
     this.cardEls.set(card.id, node);
     if (card.type === 'pdf') this.syncPdfControls(card);
+    this.syncCardEditabilityFor(card.id, node);
     return node;
   },
 
@@ -3829,7 +3909,7 @@ const Workspace = {
     if (!text && !rawHtml && opts.focus !== false) {
       const node = this.cardEls.get(card.id);
       const body = node && node.querySelector('.ws-note-body');
-      if (body) setTimeout(() => body.focus(), 30);
+      if (body) setTimeout(() => { if (this.isCardEditable(card.id)) body.focus(); }, 30);
     }
     return card;
   },
@@ -3857,7 +3937,7 @@ const Workspace = {
     if (opts.focus !== false) {
       const node = this.cardEls.get(card.id);
       const inp = node && node.querySelector('.ws-concept-title');
-      if (inp) setTimeout(() => inp.focus(), 30);
+      if (inp) setTimeout(() => { if (this.isCardEditable(card.id)) inp.focus(); }, 30);
     }
     return card;
   },
@@ -3884,14 +3964,14 @@ const Workspace = {
     if (opts.focus !== false) {
       const node = this.cardEls.get(card.id);
       const inp = node && node.querySelector('.ws-check-add input');
-      if (inp) setTimeout(() => inp.focus(), 30);
+      if (inp) setTimeout(() => { if (this.isCardEditable(card.id)) inp.focus(); }, 30);
     }
     return card;
   },
 
   addGroup(opts) {
     opts = opts || {};
-    const c = this.centerWorld();
+    const c = (opts.x == null || opts.y == null) ? this.centerWorld() : { x: 0, y: 0 };
     const card = {
       id: uid(),
       type: 'group',
@@ -3910,7 +3990,7 @@ const Workspace = {
     if (opts.focus !== false) {
       const node = this.cardEls.get(card.id);
       const inp = node && node.querySelector('.ws-group-title');
-      if (inp) setTimeout(() => { inp.focus(); inp.select(); }, 30);
+      if (inp) setTimeout(() => { if (this.isCardEditable(card.id)) { inp.focus(); inp.select(); } }, 30);
     }
     return card;
   },
@@ -3995,12 +4075,102 @@ const Workspace = {
     }
     this.updateTopbar();
     this.updateHint();
+    this.syncCardEditability();
+  },
+
+  isCardEditable(cardId) {
+    if (typeof wsCanEditCard === 'function') {
+      return wsCanEditCard({
+        cardId,
+        selectedIds: this.selectedIds,
+        drawMode: this.drawMode,
+        selectMode: this.selectMode,
+        linkFrom: this.linkFrom
+      });
+    }
+    return !this.drawMode && !this.selectMode && !this.linkFrom &&
+      !!(cardId && this.selectedIds && this.selectedIds.size === 1 && this.selectedIds.has(cardId));
+  },
+
+  clearCardTextSelection(cardNode) {
+    try {
+      const sel = typeof window !== 'undefined' && window.getSelection ? window.getSelection() : null;
+      if (!sel || !sel.rangeCount) return;
+      const anchor = sel.anchorNode;
+      const focus = sel.focusNode;
+      const inPdfLayer = (n) => {
+        const elNode = n && n.nodeType === 3 ? n.parentElement : n;
+        return !!(elNode && elNode.closest && elNode.closest('.ws-text-layer'));
+      };
+      if (inPdfLayer(anchor) || inPdfLayer(focus)) return;
+      if (!cardNode) {
+        const aEl = anchor && anchor.nodeType === 3 ? anchor.parentElement : anchor;
+        const fEl = focus && focus.nodeType === 3 ? focus.parentElement : focus;
+        const inAnyCard = (aEl && aEl.closest && aEl.closest('.ws-card')) ||
+          (fEl && fEl.closest && fEl.closest('.ws-card'));
+        if (inAnyCard) sel.removeAllRanges();
+        return;
+      }
+      if (cardNode.contains && ((anchor && cardNode.contains(anchor)) || (focus && cardNode.contains(focus)))) {
+        sel.removeAllRanges();
+      }
+    } catch (e) { /* ignora */ }
+  },
+
+  blurCardInputs(onlyCardId) {
+    const ae = typeof document !== 'undefined' ? document.activeElement : null;
+    if (onlyCardId) {
+      const node = this.cardEls.get(onlyCardId);
+      if (node && ae && node.contains && node.contains(ae) && typeof ae.blur === 'function') {
+        ae.blur();
+      }
+      if (node) this.clearCardTextSelection(node);
+      return;
+    }
+    if (ae && ae.closest && ae.closest('.ws-card') && typeof ae.blur === 'function') {
+      ae.blur();
+    }
+    this.clearCardTextSelection(null);
+  },
+
+  syncCardEditabilityFor(cid, node) {
+    if (!node) return;
+    const editable = this.isCardEditable(cid);
+    if (node.classList && typeof node.classList.toggle === 'function') {
+      node.classList.toggle('is-editable', editable);
+    }
+    if (typeof node.querySelector !== 'function' || typeof node.querySelectorAll !== 'function') return;
+
+    const noteBody = node.classList && node.classList.contains('ws-note')
+      ? node.querySelector('.ws-note-body')
+      : null;
+    if (noteBody) {
+      noteBody.contentEditable = editable ? 'true' : 'false';
+      noteBody.tabIndex = editable ? 0 : -1;
+    }
+
+    const fieldSel = '.ws-formula-input, .ws-concept-title, .ws-concept-tags-inp, textarea.ws-note-body, .ws-check-title, .ws-check-item-txt, .ws-check-add input, .ws-group-title, .ws-pdf-sinput';
+    node.querySelectorAll(fieldSel).forEach((ctrl) => {
+      ctrl.readOnly = !editable;
+      ctrl.tabIndex = editable ? 0 : -1;
+    });
+
+    if (!editable) {
+      if (typeof node._closeFormulaBox === 'function') node._closeFormulaBox();
+      this.blurCardInputs(cid);
+      if (noteBody && typeof noteBody._syncToolbar === 'function') noteBody._syncToolbar();
+    }
+  },
+
+  syncCardEditability() {
+    this.cardEls.forEach((node, cid) => this.syncCardEditabilityFor(cid, node));
   },
 
   syncSelectionClasses() {
     this.cardEls.forEach((node, cid) => {
       node.classList.toggle('selected', this.selectedIds.has(cid));
     });
+    this.syncCardEditability();
   },
 
   select(id, opts) {
@@ -4149,6 +4319,21 @@ const Workspace = {
     this.flushSave();
   },
 
+  groupSelected() {
+    if (!this.board || typeof wsComputeGroupBounds !== 'function') return null;
+    const bounds = wsComputeGroupBounds(this.board.cards, this.selectedIds);
+    if (!bounds) return null;
+    this.hideSelectionTools();
+    this.clearNativeSelection();
+    return this.addGroup({
+      x: bounds.x,
+      y: bounds.y,
+      w: bounds.w,
+      h: bounds.h,
+      focus: true
+    });
+  },
+
   renderMultiTools() {
     const box = this.els.multiTools;
     if (!box) return;
@@ -4161,11 +4346,18 @@ const Workspace = {
       this.syncDockClearance();
       return;
     }
+    const groupableCount = typeof wsCountGroupableCards === 'function'
+      ? wsCountGroupableCards(this.board && this.board.cards, this.selectedIds)
+      : 0;
     const parts = [];
     if (cCount) parts.push(cCount === 1 ? wsTr('ws.multiOneCard', null, '1 cartão') : wsTr('ws.multiManyCards', { n: cCount }, cCount + ' cartões'));
     if (sCount) parts.push(sCount === 1 ? wsTr('ws.multiOneStroke', null, '1 traço') : wsTr('ws.multiManyStrokes', { n: sCount }, sCount + ' traços'));
+    const groupBtn = groupableCount >= 2
+      ? '<button type="button" class="ws-ar-chip" data-mact="group" title="' + wsEscape(wsTr('ws.multiGroupTitle', null, 'Agrupar cartões selecionados')) + '">' + svgIcon('layers') + '<span>' + wsEscape(wsTr('ws.multiGroup', null, 'Agrupar')) + '</span></button>'
+      : '';
     box.innerHTML =
       '<span class="ws-multi-count">' + parts.join(' · ') + '</span>' +
+      groupBtn +
       '<button type="button" class="ws-ar-chip danger" data-mact="del" title="' + wsEscape(wsTr('ws.multiDelTitle', null, 'Excluir selecionados (Del)')) + '">' + svgIcon('trash') + '<span>' + wsEscape(wsTr('ws.multiDel', null, 'Excluir')) + '</span></button>' +
       '<button type="button" class="ws-ar-chip" data-mact="clear" title="' + wsEscape(wsTr('ws.multiClearTitle', null, 'Limpar seleção (Esc)')) + '">' + svgIcon('close') + '<span>' + wsEscape(wsTr('ws.multiClear', null, 'Limpar')) + '</span></button>';
     box.hidden = false;
@@ -4204,6 +4396,7 @@ const Workspace = {
     const node = this.cardEls.get(from);
     if (node) node.classList.add('link-source');
     if (this.els.shell) this.els.shell.classList.add('linking');
+    this.syncCardEditability();
     this.updateTopbar();
     toast(wsTr('ws.linkPickTarget', null, 'Clique no cartão de destino · Esc cancela'), 'arrow');
   },
@@ -4214,6 +4407,7 @@ const Workspace = {
     if (node) node.classList.remove('link-source');
     if (this.els.shell) this.els.shell.classList.remove('linking');
     this.linkFrom = null;
+    this.syncCardEditability();
     this.updateTopbar();
   },
 
@@ -5706,6 +5900,50 @@ const Workspace = {
 
   bindEvents() {
     const vp = this.els.viewport;
+    const world = this.els.world;
+
+    const editSel = typeof WS_CARD_EDITABLE_SELECTOR === 'string'
+      ? WS_CARD_EDITABLE_SELECTOR
+      : '.ws-note-body, .ws-formula-input, .ws-concept-title, .ws-concept-tags-inp, .ws-check-title, .ws-check-item-txt, .ws-check-add input, .ws-group-title, .ws-pdf-sinput';
+    const getBlockedCardControl = (target) => {
+      if (!target || !target.closest) return null;
+      const ctrl = target.closest(editSel);
+      if (!ctrl) return null;
+      const cardNode = ctrl.closest('.ws-card');
+      const cid = cardNode && cardNode.dataset && cardNode.dataset.id;
+      if (!cid || this.isCardEditable(cid)) return null;
+      return { ctrl, cardNode, cid };
+    };
+    if (world) {
+      world.addEventListener('focusin', (e) => {
+        const blocked = getBlockedCardControl(e.target);
+        if (!blocked) return;
+        if (typeof blocked.ctrl.blur === 'function') blocked.ctrl.blur();
+        this.clearCardTextSelection(blocked.cardNode);
+      });
+      world.addEventListener('beforeinput', (e) => {
+        const blocked = getBlockedCardControl(e.target);
+        if (!blocked) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (typeof blocked.ctrl.blur === 'function') blocked.ctrl.blur();
+      }, true);
+      world.addEventListener('paste', (e) => {
+        const blocked = getBlockedCardControl(e.target);
+        if (!blocked) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (typeof blocked.ctrl.blur === 'function') blocked.ctrl.blur();
+      }, true);
+      world.addEventListener('keydown', (e) => {
+        const blocked = getBlockedCardControl(e.target);
+        if (!blocked) return;
+        if (e.key === 'Escape' || e.key === 'Tab') return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (typeof blocked.ctrl.blur === 'function') blocked.ctrl.blur();
+      }, true);
+    }
 
     vp.addEventListener('pointerdown', (e) => this.onViewportPointerDown(e));
     vp.addEventListener('wheel', (e) => this.handleBoardWheel(e), { passive: false });
@@ -5720,6 +5958,13 @@ const Workspace = {
     document.addEventListener('pointermove', (e) => this.onPointerMove(e));
     document.addEventListener('pointerup', (e) => this.onPointerUp(e));
     document.addEventListener('pointercancel', (e) => this.onPointerUp(e));
+    document.addEventListener('pointerdown', (e) => {
+      if (!this.entered) return;
+      const t = e.target;
+      if (t && t.closest && !t.closest('.ws-card')) {
+        this.blurCardInputs();
+      }
+    }, true);
     document.addEventListener('pointerdown', (e) => this.onDocPointerDown(e));
     document.addEventListener('keydown', (e) => this.onKeyDown(e));
     document.addEventListener('contextmenu', (e) => {
@@ -5795,7 +6040,8 @@ const Workspace = {
       this.els.multiTools.addEventListener('click', (e) => {
         const b = e.target.closest('[data-mact]');
         if (!b) return;
-        if (b.dataset.mact === 'del') this.deleteSelected();
+        if (b.dataset.mact === 'group') this.groupSelected();
+        else if (b.dataset.mact === 'del') this.deleteSelected();
         else if (b.dataset.mact === 'clear') this.select(null);
       });
     }
@@ -6367,6 +6613,7 @@ const Workspace = {
         this.els.inkBar.hidden = true;
       }
     }
+    this.syncCardEditability();
     this.updateTopbar();
     this.updateEmpty();
     this.updateHint();
@@ -6918,6 +7165,7 @@ const Workspace = {
     if (!this.marquee) return;
     const m = this.marquee;
     this.marquee = null;
+    if (this.els.viewport) this.els.viewport.classList.remove('marqueeing');
     try { this.els.viewport.releasePointerCapture(m.id); } catch (err) { /* ignora */ }
     if (this.els.marquee) this.els.marquee.hidden = true;
     if (!commit) {
@@ -6998,6 +7246,7 @@ const Workspace = {
         prevCards,
         prevStrokes
       };
+      if (this.els.viewport) this.els.viewport.classList.add('marqueeing');
       try { this.els.viewport.setPointerCapture(e.pointerId); } catch (err) { /* ignora */ }
       e.preventDefault();
       return;
@@ -7369,6 +7618,9 @@ const Workspace = {
   onDocPointerDown(e) {
     if (!this.entered) return;
     const t = e.target;
+    if (t && t.closest && !t.closest('.ws-card')) {
+      this.blurCardInputs();
+    }
     if (this.popover && this.popover !== 'confirm' &&
         !t.closest('.ws-popover') &&
         !t.closest('[data-act="bg"]') &&
@@ -7538,6 +7790,7 @@ const Workspace = {
     if (e.button != null && e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
+    this.blurCardInputs();
     const shiftHeld = !!e.shiftKey;
     let shiftToggleCandidate = false;
     if (shiftHeld) {
@@ -7802,6 +8055,7 @@ const Workspace = {
     if (e.button != null && e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
+    this.blurCardInputs();
     this.select(card.id);
     this.cardResize = {
       card,

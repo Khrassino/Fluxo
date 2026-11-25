@@ -185,3 +185,76 @@ test('Workspace avoids native window.confirm so PDF and card deletion works insi
   assert.ok(code.includes('openConfirm('));
   assert.ok(code.includes('requestRemoveCard('));
 });
+
+test('WS_BG_SWATCHES exposes 14 unique options formatted in a 7x2 background grid', () => {
+  const ctx = loadWorkspaceContext();
+  const swatches = JSON.parse(vm.runInContext('JSON.stringify(WS_BG_SWATCHES)', ctx)) as string[];
+  assert.equal(swatches.length, 14);
+  assert.equal(new Set(swatches).size, 14);
+  assert.equal(swatches[0], '');
+  swatches.slice(1).forEach((hex) => {
+    assert.match(hex, /^#[0-9a-f]{6}$/i);
+  });
+
+  const css = fs.readFileSync(path.resolve(process.cwd(), 'public/css/workspace.css'), 'utf8');
+  assert.match(css, /\.ws-bg-color-grid\s*\{[^}]*grid-template-columns:\s*repeat\(7,\s*minmax\(0,\s*1fr\)\)/);
+});
+
+test('Pressing viewport in selectMode toggles marqueeing cursor class until pointer release', () => {
+  const ctx = loadWorkspaceContext();
+  const result = JSON.parse(vm.runInContext(`(() => {
+    const cls = new Set();
+    const vp = {
+      classList: {
+        add: (c) => cls.add(c),
+        remove: (c) => cls.delete(c),
+        toggle: (c, f) => (f ? cls.add(c) : cls.delete(c)),
+        contains: (c) => cls.has(c)
+      },
+      setPointerCapture: () => {},
+      releasePointerCapture: () => {},
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 1200, height: 800 })
+    };
+    Workspace.entered = true;
+    Workspace.selectMode = true;
+    Workspace.selectSpacePan = false;
+    Workspace.board = Workspace.normalize({});
+    Workspace.els = {
+      viewport: vp,
+      marquee: { hidden: true },
+      shell: { classList: { toggle: () => {}, add: () => {}, remove: () => {} } },
+      timerSettings: { hidden: true },
+      selTools: { hidden: true },
+      multiTools: { hidden: true },
+      arrowTools: { hidden: true },
+      popovers: { innerHTML: '' }
+    };
+    Workspace.closePopover = () => {};
+    Workspace.closeTimerSettings = () => {};
+    Workspace.hideSelectionTools = () => {};
+    Workspace.cancelLink = () => {};
+    Workspace.renderMultiTools = () => {};
+    Workspace.renderArrows = () => {};
+    Workspace.renderArrowTools = () => {};
+    Workspace.renderInk = () => {};
+    Workspace.hideSnapOverlay = () => {};
+    Workspace.syncSelectionClasses = () => {};
+    Workspace.onViewportPointerDown({
+      button: 0,
+      pointerId: 1,
+      clientX: 100,
+      clientY: 120,
+      shiftKey: false,
+      target: { closest: () => null },
+      preventDefault: () => {}
+    });
+    const whilePressed = cls.has('marqueeing');
+    Workspace.finishMarquee(true);
+    const afterRelease = cls.has('marqueeing');
+    return JSON.stringify({ whilePressed, afterRelease });
+  })()`, ctx));
+
+  assert.equal(result.whilePressed, true);
+  assert.equal(result.afterRelease, false);
+});
+
