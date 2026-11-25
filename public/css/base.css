@@ -466,7 +466,7 @@ body.dock-dragging, body.dock-dragging #dock, body.dock-dragging #dock * { curso
 #dock.open .dock-items > *:nth-child(6) { transition-delay: .25s; }
 
 /* ============ ícones / botões genéricos ============ */
-.icon { width: 20px; height: 20px; flex: none; display: inline-block; vertical-align: middle; }
+.icon { width: 20px; height: 20px; flex: none; display: block; }
 .icon-btn {
   width: 46px; height: 46px; border-radius: 50%;
   border: 1px solid var(--border);

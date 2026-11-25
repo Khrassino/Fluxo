@@ -168,9 +168,6 @@ body.panel-open #panel-backdrop { opacity: 1; pointer-events: auto; }
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
   margin-top: 12px;
 }
-.panel-actions .chip {
-  display: inline-flex; align-items: center;
-}
 .panel-actions .chip.is-primary {
   color: var(--accent);
   border-color: var(--accent);
@@ -191,6 +188,7 @@ body.panel-open #panel-backdrop { opacity: 1; pointer-events: auto; }
 
 .chip-grid { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   padding: 8px 13px; border-radius: 10px;
   border: 1px solid var(--border);
   font-size: 12.5px; color: var(--text-dim);
@@ -198,7 +196,7 @@ body.panel-open #panel-backdrop { opacity: 1; pointer-events: auto; }
 }
 .chip:hover { color: var(--text); border-color: var(--text-faint); }
 .chip.active { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
-.chip .icon { width: 14px; height: 14px; margin-right: 5px; }
+.chip .icon { width: 14px; height: 14px; }
 .font-chip { font-size: 14.5px; padding: 9px 15px; }
 
 /* ---- temas (cartões minimalistas) ---- */
@@ -467,7 +465,6 @@ input[type="color"]::-webkit-color-swatch { border: none; border-radius: 50%; }
 .divider { height: 1px; background: var(--border); margin: 18px 0; }
 
 .color-row { display: flex; align-items: center; gap: 10px; }
-.color-row .chip { display: inline-flex; align-items: center; }
 
 /* ---- músicas temáticas: capas lado a lado com play no hover ---- */
 .music-cover-grid {

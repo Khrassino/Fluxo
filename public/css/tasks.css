@@ -315,6 +315,9 @@
   color: var(--text-dim);
 }
 .tasks-undo-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-weight: 600;
   color: var(--task-accent, var(--accent));
   padding: 4px 10px;
@@ -390,7 +393,7 @@
 .task-check {
   width: 20px;
   height: 20px;
-  margin-top: 1px;
+  margin-top: 0;
   border-radius: 6px;
   border: 1.75px solid var(--task-accent, var(--accent));
   display: grid;
@@ -476,6 +479,7 @@
   display: flex;
   align-items: center;
   gap: 1px;
+  margin: -4px 0;
   flex: none;
 }
 .task-act-btn {
@@ -554,7 +558,10 @@
 }
 .task-detail-input:focus { outline: none; border-color: var(--task-accent, var(--accent)); }
 .task-mini-btn {
-  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
   padding: 0 9px;
   border-radius: 7px;
   border: 1px solid var(--border);
@@ -722,6 +729,6 @@
   .tasks-toolbar-right { justify-content: space-between; }
   .task-main { flex-wrap: wrap; padding: 12px; gap: 8px 10px; }
   .task-body { flex: 1 1 calc(100% - 40px); }
-  .task-actions { width: 100%; padding-left: 34px; gap: 6px; }
+  .task-actions { width: 100%; margin: 0; padding-left: 34px; gap: 6px; }
   .task-act-btn { opacity: .78; width: 34px; height: 34px; }
 }

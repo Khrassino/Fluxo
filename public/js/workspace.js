@@ -3046,7 +3046,7 @@ const Workspace = {
         });
         tintBar.append(dot);
       });
-      const mathBtn = el('button', 'ws-card-btn', '∑');
+      const mathBtn = el('button', 'ws-card-btn', svgIcon('sigma'));
       mathBtn.type = 'button';
       mathBtn.dataset.conceptmath = '1';
       mathBtn.title = wsTr('ws.mathInsertTitle', null, 'Inserir fórmula LaTeX');

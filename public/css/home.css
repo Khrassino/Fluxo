@@ -66,7 +66,8 @@
 }
 .home-chip {
   display: flex; align-items: center; gap: 9px;
-  padding: 9px 15px; border-radius: 999px;
+  min-height: 38px;
+  padding: 8px 15px; border-radius: 999px;
   background: var(--glass); border: 1px solid var(--border);
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
   color: var(--text); font-size: 13.5px;
@@ -75,7 +76,8 @@
 .home-chip:hover { border-color: var(--accent); transform: translateY(-2px); }
 .home-chip .icon { width: 16px; height: 16px; color: var(--accent); }
 .home-chip .mini {
-  width: 26px; height: 26px; border-radius: 50%;
+  width: 24px; height: 24px; border-radius: 50%;
+  margin: -2px -3px -2px 0;
   display: grid; place-items: center;
   background: var(--accent-soft); color: var(--accent);
   transition: all .3s cubic-bezier(.3, .7, .3, 1);
