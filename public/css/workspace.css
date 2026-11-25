@@ -1133,9 +1133,9 @@ body[data-route="workspace"] { overflow: hidden; }
 }
 
 .ws-math-inline {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 1px;
+  /* inline-block (e não inline-flex): em um contêiner flex o vertical-align das frações,
+     expoentes e subscritos é ignorado, e o "=" alinhava com o numerador em vez do traço */
+  display: inline-block;
   padding: 0 4px;
   margin: 0 1px;
   border-radius: 4px;
