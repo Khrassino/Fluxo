@@ -1740,6 +1740,114 @@ function wsComputeResizeSnap(box, otherBoxes, opts) {
   };
 }
 
+const WS_UNDO_LIMIT = 60;
+
+function wsCloneBoardSnapshot(board) {
+  const b = board && typeof board === 'object' ? board : {};
+  const payload = {
+    cards: Array.isArray(b.cards) ? b.cards : [],
+    arrows: Array.isArray(b.arrows) ? b.arrows : [],
+    pdfs: Array.isArray(b.pdfs) ? b.pdfs : [],
+    images: Array.isArray(b.images) ? b.images : [],
+    strokes: Array.isArray(b.strokes) ? b.strokes : []
+  };
+  const key = JSON.stringify(payload);
+  return {
+    key,
+    data: JSON.parse(key)
+  };
+}
+
+function wsSnapshotsEqual(a, b) {
+  if (!a || !b) return false;
+  if (typeof a.key === 'string' && typeof b.key === 'string') return a.key === b.key;
+  return JSON.stringify(a.data || a) === JSON.stringify(b.data || b);
+}
+
+function wsPushUndoState(undoStack, redoStack, snapshot, afterSnapshot, limit) {
+  const nextUndo = Array.isArray(undoStack) ? undoStack.slice() : [];
+  const nextRedo = Array.isArray(redoStack) ? redoStack.slice() : [];
+  if (!snapshot || !snapshot.data) {
+    return { undoStack: nextUndo, redoStack: nextRedo, pushed: false };
+  }
+  if (afterSnapshot && wsSnapshotsEqual(snapshot, afterSnapshot)) {
+    return { undoStack: nextUndo, redoStack: nextRedo, pushed: false };
+  }
+  if (nextUndo.length && wsSnapshotsEqual(nextUndo[nextUndo.length - 1], snapshot)) {
+    return { undoStack: nextUndo, redoStack: nextRedo, pushed: false };
+  }
+  const cap = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : WS_UNDO_LIMIT;
+  nextUndo.push(snapshot);
+  while (nextUndo.length > cap) nextUndo.shift();
+  return { undoStack: nextUndo, redoStack: [], pushed: true };
+}
+
+function wsStepUndoState(undoStack, redoStack, currentSnapshot, limit) {
+  const nextUndo = Array.isArray(undoStack) ? undoStack.slice() : [];
+  const nextRedo = Array.isArray(redoStack) ? redoStack.slice() : [];
+  if (!nextUndo.length) return { ok: false, undoStack: nextUndo, redoStack: nextRedo, snapshot: null };
+  const target = nextUndo.pop();
+  if (currentSnapshot && currentSnapshot.data) {
+    const cap = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : WS_UNDO_LIMIT;
+    if (!nextRedo.length || !wsSnapshotsEqual(nextRedo[nextRedo.length - 1], currentSnapshot)) {
+      nextRedo.push(currentSnapshot);
+      while (nextRedo.length > cap) nextRedo.shift();
+    }
+  }
+  return { ok: true, undoStack: nextUndo, redoStack: nextRedo, snapshot: target };
+}
+
+function wsStepRedoState(undoStack, redoStack, currentSnapshot, limit) {
+  const nextUndo = Array.isArray(undoStack) ? undoStack.slice() : [];
+  const nextRedo = Array.isArray(redoStack) ? redoStack.slice() : [];
+  if (!nextRedo.length) return { ok: false, undoStack: nextUndo, redoStack: nextRedo, snapshot: null };
+  const target = nextRedo.pop();
+  if (currentSnapshot && currentSnapshot.data) {
+    const cap = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : WS_UNDO_LIMIT;
+    if (!nextUndo.length || !wsSnapshotsEqual(nextUndo[nextUndo.length - 1], currentSnapshot)) {
+      nextUndo.push(currentSnapshot);
+      while (nextUndo.length > cap) nextUndo.shift();
+    }
+  }
+  return { ok: true, undoStack: nextUndo, redoStack: nextRedo, snapshot: target };
+}
+
+function wsCollectReferencedFileIds(board, undoStack, redoStack) {
+  const ids = new Set();
+  const collectFrom = (b) => {
+    if (!b || typeof b !== 'object') return;
+    if (Array.isArray(b.pdfs)) {
+      for (let i = 0; i < b.pdfs.length; i++) {
+        if (b.pdfs[i] && b.pdfs[i].id) ids.add(String(b.pdfs[i].id));
+      }
+    }
+    if (Array.isArray(b.images)) {
+      for (let i = 0; i < b.images.length; i++) {
+        if (b.images[i] && b.images[i].id) ids.add(String(b.images[i].id));
+      }
+    }
+    if (Array.isArray(b.cards)) {
+      for (let i = 0; i < b.cards.length; i++) {
+        const c = b.cards[i];
+        if (!c) continue;
+        if (c.pdfId) ids.add(String(c.pdfId));
+        if (c.imgId) ids.add(String(c.imgId));
+      }
+    }
+  };
+  collectFrom(board);
+  const scanStack = (st) => {
+    if (!Array.isArray(st)) return;
+    for (let i = 0; i < st.length; i++) {
+      const item = st[i];
+      collectFrom(item && item.data ? item.data : item);
+    }
+  };
+  scanStack(undoStack);
+  scanStack(redoStack);
+  return ids;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     WS_CARD_TYPES,
@@ -1814,6 +1922,13 @@ if (typeof module !== 'undefined' && module.exports) {
     wsNoteHtmlToPlainText,
     wsShouldWheelScrollNote,
     wsComputeSnap,
-    wsComputeResizeSnap
+    wsComputeResizeSnap,
+    WS_UNDO_LIMIT,
+    wsCloneBoardSnapshot,
+    wsSnapshotsEqual,
+    wsPushUndoState,
+    wsStepUndoState,
+    wsStepRedoState,
+    wsCollectReferencedFileIds
   };
 }

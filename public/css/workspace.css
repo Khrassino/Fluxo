@@ -1707,7 +1707,7 @@ body[data-route="workspace"] { overflow: hidden; }
 .ws-actions {
   pointer-events: auto;
   display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 3px;
-  padding: 5px; border-radius: 14px; max-width: min(980px, calc(100vw - 260px));
+  padding: 5px; border-radius: 14px; max-width: min(1080px, calc(100vw - 260px));
   background: var(--glass-strong); border: 1px solid var(--border);
   backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
   box-shadow: 0 10px 30px rgba(0,0,0,.2);
@@ -1719,6 +1719,7 @@ body[data-route="workspace"] { overflow: hidden; }
   transition: all .18s ease;
 }
 .ws-tool:hover { background: var(--surface); color: var(--text); }
+.ws-tool:disabled { opacity: .34; pointer-events: none; }
 .ws-tool.active { background: var(--accent); color: var(--accent-contrast); }
 .ws-tool.active .icon { stroke-width: 2.2; }
 .ws-tool .icon { width: 17px; height: 17px; }

@@ -342,6 +342,11 @@ const Workspace = {
   hoveredGripEl: null,
   inkUndo: [],
   inkRedo: [],
+  undoStack: [],
+  redoStack: [],
+  undoFiles: new Map(),
+  _undoBatchDepth: 0,
+  _textUndo: null,
   inkSpacePan: false,
   inkHandLock: false,
   inkRaf: null,
@@ -724,6 +729,7 @@ const Workspace = {
 
   leave() {
     if (!this.entered) return;
+    this.commitTextUndo(false);
     this.entered = false;
     this.stopTimerLoop();
     this.setDrawMode(false);
@@ -793,6 +799,9 @@ const Workspace = {
         '<button class="ws-tool" data-act="timer" title="' + wsEscape(wsTr('ws.timerTitle', null, 'Mostrar ou ocultar o cronômetro')) + '">' + svgIcon('timer') + '</button>' +
         '<button class="ws-tool" data-act="fit" title="' + wsEscape(wsTr('ws.fitTitle', null, 'Ajustar o quadro à tela')) + '">' + svgIcon('fit') + '</button>' +
         '<span class="ws-tool-sep"></span>' +
+        '<button class="ws-tool" data-act="undo" title="' + wsEscape(wsTr('ws.undoTitle', null, 'Desfazer (Ctrl+Z)')) + '" aria-label="' + wsEscape(wsTr('ws.undoAria', null, 'Desfazer')) + '" disabled>' + svgIcon('undo') + '</button>' +
+        '<button class="ws-tool" data-act="redo" title="' + wsEscape(wsTr('ws.redoTitle', null, 'Refazer (Ctrl+Shift+Z)')) + '" aria-label="' + wsEscape(wsTr('ws.redoAria', null, 'Refazer')) + '" disabled>' + svgIcon('redo') + '</button>' +
+        '<span class="ws-tool-sep"></span>' +
         '<button class="ws-tool" data-act="export" title="' + wsEscape(wsTr('ws.exportTitle', null, 'Salvar área de trabalho como arquivo (.fluxo)')) + '" aria-label="' + wsEscape(wsTr('ws.boards.saveFile', null, 'Salvar arquivo')) + '">' + svgIcon('download') + '</button>' +
         '<button class="ws-tool" data-act="import" title="' + wsEscape(wsTr('ws.importTitle', null, 'Abrir arquivo de área de trabalho (.fluxo)')) + '" aria-label="' + wsEscape(wsTr('ws.boards.openFile', null, 'Abrir arquivo')) + '">' + svgIcon('folder') + '</button>' +
       '</div>';
@@ -816,6 +825,8 @@ const Workspace = {
         else if (act === 'bg') this.openBgPopover();
         else if (act === 'timer') this.toggleTimerVisible();
         else if (act === 'fit') this.fitView();
+        else if (act === 'undo') this.undo();
+        else if (act === 'redo') this.redo();
         else if (act === 'export') this.exportWorkspaceFile();
         else if (act === 'import') this.els.fileImport && this.els.fileImport.click();
       });
@@ -846,6 +857,10 @@ const Workspace = {
     if (link) link.classList.toggle('active', !!this.linkFrom);
     const timer = this.els.topbar.querySelector('[data-act="timer"]');
     if (timer && this.board) timer.classList.toggle('active', !!this.board.timer.visible);
+    const undoBtn = this.els.topbar.querySelector('[data-act="undo"]');
+    if (undoBtn) undoBtn.disabled = !this.canUndo();
+    const redoBtn = this.els.topbar.querySelector('[data-act="redo"]');
+    if (redoBtn) redoBtn.disabled = !this.canRedo();
     const brand = this.els.topbar.querySelector('.ws-brand');
     if (brand) brand.classList.toggle('active', this.popover === 'boards');
     const nameEl = this.els.topbar.querySelector('#ws-brand-name');
@@ -1106,6 +1121,11 @@ const Workspace = {
     this.arrowEls.clear();
     this.inkUndo = [];
     this.inkRedo = [];
+    this.undoStack = [];
+    this.redoStack = [];
+    if (this.undoFiles) this.undoFiles.clear();
+    this._undoBatchDepth = 0;
+    this.clearTextUndo();
     this.inkStroke = null;
     this.inkEraser = null;
     this.setHoveredGrip(null);
@@ -2550,6 +2570,8 @@ const Workspace = {
 
       let activeSlot = null;
       let activeDisplayMode = false;
+      let formulaBeforeSnap = null;
+      let formulaEditMeta = null;
 
       const syncFormulaModeBtns = () => {
         fUi.modeBtns.forEach(b => b.classList.toggle('active', (b.dataset.fmode === '1') === activeDisplayMode));
@@ -2572,10 +2594,18 @@ const Workspace = {
 
       const closeFormulaBox = (opts) => {
         opts = opts || {};
+        const wasOpen = !fUi.box.hidden || !!activeSlot;
+        let removedEmpty = false;
+        let changedFormula = !!(formulaEditMeta && formulaEditMeta.isNew);
         if (activeSlot) {
           activeSlot.classList.remove('is-editing');
-          if (!String(activeSlot.dataset.tex || '').trim() || opts.remove) {
+          const curTex = String(activeSlot.dataset.tex || '').trim();
+          const curDisp = activeSlot.dataset.display === '1';
+          if (!curTex || opts.remove) {
             activeSlot.remove();
+            removedEmpty = true;
+          } else if (formulaEditMeta && !formulaEditMeta.isNew) {
+            changedFormula = curTex !== String(formulaEditMeta.tex || '').trim() || curDisp !== !!formulaEditMeta.disp;
           }
           activeSlot = null;
         }
@@ -2584,6 +2614,12 @@ const Workspace = {
         stage.classList.remove('formula-side');
         node.classList.remove('formula-open');
         commitNoteContent();
+        if (wasOpen && formulaBeforeSnap && (changedFormula || removedEmpty)) {
+          this.pushUndo(formulaBeforeSnap);
+        }
+        formulaBeforeSnap = null;
+        formulaEditMeta = null;
+        this.refreshTextUndoBaseline();
         requestAnimationFrame(() => this.updateArrowsFor(card.id));
         if (opts.focusBody && this.isCardEditable(card.id)) {
           body.focus();
@@ -2595,11 +2631,20 @@ const Workspace = {
         if (!fUi.box.hidden) closeFormulaBox({ focusBody: false, previewIfBlurred: true });
       };
 
-      const openFormulaForSlot = (slot, selectText) => {
+      const openFormulaForSlot = (slot, selectText, beforeSnapOverride, isNewSlot) => {
         if (!slot) return;
         if (activeSlot && activeSlot !== slot) {
           activeSlot.classList.remove('is-editing');
           if (!String(activeSlot.dataset.tex || '').trim()) activeSlot.remove();
+        }
+        if (!formulaBeforeSnap) {
+          if (this._textUndo && this._textUndo.dirty) this.commitTextUndo(false);
+          formulaBeforeSnap = beforeSnapOverride || this.captureUndoSnapshot();
+          formulaEditMeta = {
+            tex: slot.dataset.tex || '',
+            disp: slot.dataset.display === '1',
+            isNew: !!isNewSlot
+          };
         }
         mathView.hidden = true;
         stage.classList.remove('showing-math');
@@ -2641,6 +2686,8 @@ const Workspace = {
       };
 
       const insertNewFormulaSlot = () => {
+        if (this._textUndo && this._textUndo.dirty) this.commitTextUndo(false);
+        const beforeSnap = this.captureUndoSnapshot();
         mathView.hidden = true;
         stage.classList.remove('showing-math');
         ensureBodyFocusCaret();
@@ -2667,7 +2714,7 @@ const Workspace = {
           body.append(slot, spaceAfter);
         }
         commitNoteContent();
-        openFormulaForSlot(slot, !selected);
+        openFormulaForSlot(slot, !selected, beforeSnap, true);
       };
 
       fUi.inp.addEventListener('input', () => applyActiveFormulaUpdate(true));
@@ -2800,14 +2847,17 @@ const Workspace = {
         }
         const cmdBtn = e.target.closest('[data-notecmd]');
         if (cmdBtn) {
+          this.pushUndo();
           ensureBodyFocusCaret();
           try { document.execCommand(cmdBtn.dataset.notecmd, false, null); } catch (err) { /* ignora */ }
           commitNoteContent();
+          this.refreshTextUndoBaseline();
           syncToolbar();
           return;
         }
         const alignBtn = e.target.closest('[data-notealign]');
         if (alignBtn) {
+          this.pushUndo();
           const nextAlign = typeof wsNormalizeNoteAlign === 'function'
             ? wsNormalizeNoteAlign(alignBtn.dataset.notealign)
             : alignBtn.dataset.notealign;
@@ -2826,11 +2876,13 @@ const Workspace = {
             applyNoteTypography();
           }
           commitNoteContent();
+          this.refreshTextUndoBaseline();
           syncToolbar();
           return;
         }
         const listBtn = e.target.closest('[data-notelist]');
         if (listBtn) {
+          this.pushUndo();
           const kind = listBtn.dataset.notelist;
           ensureBodyFocusCaret();
           if (kind === 'decimal') {
@@ -2855,6 +2907,7 @@ const Workspace = {
             }
           }
           commitNoteContent();
+          this.refreshTextUndoBaseline();
           syncToolbar();
           return;
         }
@@ -2865,10 +2918,15 @@ const Workspace = {
         }
         const tintDot = e.target.closest('[data-notetint]');
         if (tintDot) {
-          card.accent = tintDot.dataset.notetint || '';
-          this.applyCardTint(node, card.accent);
-          syncToolbar();
-          this.scheduleSave();
+          const nextTint = tintDot.dataset.notetint || '';
+          if ((card.accent || '') !== nextTint) {
+            this.pushUndo();
+            card.accent = nextTint;
+            this.applyCardTint(node, card.accent);
+            syncToolbar();
+            this.refreshTextUndoBaseline();
+            this.scheduleSave();
+          }
         }
       });
 
@@ -2896,15 +2954,19 @@ const Workspace = {
       };
 
       fontSel.addEventListener('change', () => {
+        this.pushUndo();
         card.font = typeof wsNormalizeNoteFont === 'function' ? wsNormalizeNoteFont(fontSel.value) : fontSel.value;
         applyNoteTypography();
         renderNoteMathPreview();
+        this.refreshTextUndoBaseline();
         this.scheduleSave();
       });
       sizeSel.addEventListener('change', () => {
+        this.pushUndo();
         card.fontSize = typeof wsNormalizeNoteSize === 'function' ? wsNormalizeNoteSize(sizeSel.value) : Number(sizeSel.value);
         applyNoteTypography();
         renderNoteMathPreview();
+        this.refreshTextUndoBaseline();
         this.scheduleSave();
       });
 
@@ -2918,10 +2980,11 @@ const Workspace = {
         if (mathEl) {
           const allMath = Array.from(mathView.querySelectorAll('.ws-math-inline[data-tex], .ws-math-display[data-tex]'));
           const idx = allMath.indexOf(mathEl);
+          const snapBeforePromote = this.captureUndoSnapshot();
           promoteRawMathToSlots();
           const slots = Array.from(body.querySelectorAll('.ws-math-slot'));
           if (idx >= 0 && slots[idx]) {
-            openFormulaForSlot(slots[idx], false);
+            openFormulaForSlot(slots[idx], false, snapBeforePromote, false);
             return;
           }
         }
@@ -3039,10 +3102,14 @@ const Workspace = {
         dot.style.background = t.color || 'var(--border)';
         dot.addEventListener('click', (e) => {
           e.stopPropagation();
-          card.accent = t.id;
-          this.applyCardTint(node, card.accent);
-          tintBar.querySelectorAll('.ws-tint-dot').forEach((d, idx) => d.classList.toggle('active', idx === WS_CARD_TINTS.indexOf(t)));
-          this.scheduleSave();
+          if ((card.accent || '') !== (t.id || '')) {
+            this.pushUndo();
+            card.accent = t.id;
+            this.applyCardTint(node, card.accent);
+            tintBar.querySelectorAll('.ws-tint-dot').forEach((d, idx) => d.classList.toggle('active', idx === WS_CARD_TINTS.indexOf(t)));
+            this.refreshTextUndoBaseline();
+            this.scheduleSave();
+          }
         });
         tintBar.append(dot);
       });
@@ -3141,6 +3208,8 @@ const Workspace = {
       node._syncFormulaLayout = syncConceptFormulaSide;
 
       let activeFormulaRange = null;
+      let conceptFormulaBeforeSnap = null;
+      let conceptFormulaEditMeta = null;
 
       const findConceptMathTokens = (srcText) => {
         const src = String(srcText || '');
@@ -3232,7 +3301,16 @@ const Workspace = {
         requestAnimationFrame(() => this.updateArrowsFor(card.id));
       };
 
-      const openConceptFormulaRange = (range, selectInput) => {
+      const openConceptFormulaRange = (range, selectInput, beforeSnapOverride, isNewFormula) => {
+        if (!conceptFormulaBeforeSnap) {
+          if (this._textUndo && this._textUndo.dirty) this.commitTextUndo(false);
+          conceptFormulaBeforeSnap = beforeSnapOverride || this.captureUndoSnapshot();
+          conceptFormulaEditMeta = {
+            tex: range.initialTex || '',
+            disp: !!range.displayMode,
+            isNew: !!isNewFormula
+          };
+        }
         activeFormulaRange = range;
         fInp.value = range.initialTex || '';
         fModeBtns.forEach(b => b.classList.toggle('active', (b.dataset.fmode === '1') === !!range.displayMode));
@@ -3248,17 +3326,30 @@ const Workspace = {
 
       const closeConceptFormulaBox = (opts) => {
         opts = opts || {};
+        const wasOpen = !fBox.hidden || !!activeFormulaRange;
+        let removedOrEmpty = false;
+        let changedFormula = !!(conceptFormulaEditMeta && conceptFormulaEditMeta.isNew);
         if (activeFormulaRange && (opts.remove || !fInp.value.trim())) {
           const txt = card.text || '';
           card.text = txt.slice(0, activeFormulaRange.start) + txt.slice(activeFormulaRange.end);
           body.value = card.text;
+          removedOrEmpty = true;
           this.scheduleSave();
+        } else if (activeFormulaRange && conceptFormulaEditMeta && !conceptFormulaEditMeta.isNew) {
+          changedFormula = String(fInp.value || '') !== String(conceptFormulaEditMeta.tex || '') ||
+            !!activeFormulaRange.displayMode !== !!conceptFormulaEditMeta.disp;
         }
         activeFormulaRange = null;
         fBox.hidden = true;
         fWarn.hidden = true;
         stage.classList.remove('formula-side');
         node.classList.remove('formula-open');
+        if (wasOpen && conceptFormulaBeforeSnap && (changedFormula || removedOrEmpty)) {
+          this.pushUndo(conceptFormulaBeforeSnap);
+        }
+        conceptFormulaBeforeSnap = null;
+        conceptFormulaEditMeta = null;
+        this.refreshTextUndoBaseline();
         renderConceptMathPreview();
         requestAnimationFrame(() => this.updateArrowsFor(card.id));
         if (opts.focusBody && this.isCardEditable(card.id)) body.focus();
@@ -3270,6 +3361,8 @@ const Workspace = {
       mathBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         if (!this.isCardEditable(card.id)) return;
+        if (this._textUndo && this._textUndo.dirty) this.commitTextUndo(false);
+        const beforeSnap = this.captureUndoSnapshot();
         const curText = card.text || '';
         const s = typeof body.selectionStart === 'number' ? body.selectionStart : curText.length;
         const end = typeof body.selectionEnd === 'number' ? body.selectionEnd : s;
@@ -3289,7 +3382,7 @@ const Workspace = {
           initialTex: initTex,
           lastValidHtml: initialSafe.valid ? initialSafe.html : '',
           tokenIndex: tokIdx
-        }, !selected);
+        }, !selected, beforeSnap, true);
       });
 
       fInp.addEventListener('input', () => updateConceptFormula(true));
@@ -3437,6 +3530,7 @@ const Workspace = {
           cb.checked = !!it.done;
           cb.setAttribute('aria-label', wsTr('ws.checkAria', null, 'Marcar item'));
           cb.addEventListener('change', () => {
+            this.pushUndo();
             it.done = cb.checked;
             row.classList.toggle('done', it.done);
             prog.textContent = card.items.filter(x => x && x.done).length + '/' + card.items.length;
@@ -3457,6 +3551,7 @@ const Workspace = {
           const rm = this.cardButton('close', wsTr('ws.checkRemoveItem', null, 'Remover item'), 'danger');
           rm.addEventListener('click', (e) => {
             e.stopPropagation();
+            this.pushUndo();
             card.items = card.items.filter(x => x.id !== it.id);
             renderItems();
             this.scheduleSave();
@@ -3473,6 +3568,7 @@ const Workspace = {
         const inp = addForm.querySelector('input');
         const txt = (inp && inp.value || '').trim();
         if (!txt) return;
+        this.pushUndo();
         card.items.push({ id: uid(), text: txt.slice(0, 240), done: false });
         inp.value = '';
         renderItems();
@@ -3503,10 +3599,14 @@ const Workspace = {
         dot.style.background = t.color || 'var(--border)';
         dot.addEventListener('click', (e) => {
           e.stopPropagation();
-          card.accent = t.id;
-          this.applyCardTint(node, card.accent);
-          tintBar.querySelectorAll('.ws-tint-dot').forEach((d, idx) => d.classList.toggle('active', idx === WS_CARD_TINTS.indexOf(t)));
-          this.scheduleSave();
+          if ((card.accent || '') !== (t.id || '')) {
+            this.pushUndo();
+            card.accent = t.id;
+            this.applyCardTint(node, card.accent);
+            tintBar.querySelectorAll('.ws-tint-dot').forEach((d, idx) => d.classList.toggle('active', idx === WS_CARD_TINTS.indexOf(t)));
+            this.refreshTextUndoBaseline();
+            this.scheduleSave();
+          }
         });
         tintBar.append(dot);
       });
@@ -3752,6 +3852,7 @@ const Workspace = {
         }
         const rot = e.target.closest('[data-pdfact="rotate"]');
         if (rot) {
+          this.pushUndo();
           card.rotation = ((card.rotation || 0) + 90) % 360;
           this.pdfRendered.delete(card.id);
           this.scheduleSave();
@@ -3880,6 +3981,7 @@ const Workspace = {
 
   addNote(opts) {
     opts = opts || {};
+    this.pushUndo();
     const c = this.centerWorld();
     const text = typeof opts.text === 'string' ? opts.text : '';
     const rawHtml = typeof opts.html === 'string' && typeof wsSanitizeNoteHtml === 'function'
@@ -3916,6 +4018,7 @@ const Workspace = {
 
   addConcept(opts) {
     opts = opts || {};
+    this.pushUndo();
     const c = this.centerWorld();
     const card = {
       id: uid(),
@@ -3944,6 +4047,7 @@ const Workspace = {
 
   addChecklist(opts) {
     opts = opts || {};
+    this.pushUndo();
     const c = this.centerWorld();
     const card = {
       id: uid(),
@@ -3971,6 +4075,7 @@ const Workspace = {
 
   addGroup(opts) {
     opts = opts || {};
+    this.pushUndo();
     const c = (opts.x == null || opts.y == null) ? this.centerWorld() : { x: 0, y: 0 };
     const card = {
       id: uid(),
@@ -4011,6 +4116,7 @@ const Workspace = {
 
   removeCard(card) {
     if (!card) return;
+    this.pushUndo();
 
     this.board.arrows = this.board.arrows.filter(a => a.from !== card.id && a.to !== card.id);
     this.board.cards = this.board.cards.filter(c => c.id !== card.id);
@@ -4028,7 +4134,7 @@ const Workspace = {
       this.pdfDocs.delete(card.pdfId);
       this.pdfPromises.delete(card.pdfId);
       this.pdfTextCache.delete(card.pdfId);
-      WorkspaceDB.delFile(card.pdfId).catch(() => {});
+      this.stashAndDeleteCardFile(card);
       this.board.pdfs = this.board.pdfs.filter(p => p.id !== card.pdfId);
       this.board.cards.forEach(c => {
         if (c.type === 'note' && c.source && c.source.pdfId === card.pdfId) {
@@ -4037,8 +4143,7 @@ const Workspace = {
         }
       });
     } else if (card.type === 'image') {
-      this.imgUrls.delete(card.imgId);
-      WorkspaceDB.delFile(card.imgId).catch(() => {});
+      this.stashAndDeleteCardFile(card);
       this.board.images = (this.board.images || []).filter(im => im.id !== card.imgId);
     }
 
@@ -4118,6 +4223,13 @@ const Workspace = {
   },
 
   blurCardInputs(onlyCardId) {
+    if (this._textUndo && this._textUndo.el) {
+      const tuNode = this._textUndo.el.closest ? this._textUndo.el.closest('.ws-card') : null;
+      const tuCid = tuNode && tuNode.dataset ? tuNode.dataset.id : null;
+      if (!onlyCardId || tuCid === onlyCardId) {
+        this.commitTextUndo(false);
+      }
+    }
     const ae = typeof document !== 'undefined' ? document.activeElement : null;
     if (onlyCardId) {
       const node = this.cardEls.get(onlyCardId);
@@ -4259,8 +4371,9 @@ const Workspace = {
       if (!ok) return;
     }
 
+    this.pushUndo();
+
     if (strokeIds.size && Array.isArray(this.board.strokes) && this.board.strokes.length) {
-      this.pushInkUndo();
       this.board.strokes = this.board.strokes.filter(s => !strokeIds.has(s.id));
     }
 
@@ -4282,11 +4395,10 @@ const Workspace = {
         this.pdfDocs.delete(card.pdfId);
         this.pdfPromises.delete(card.pdfId);
         this.pdfTextCache.delete(card.pdfId);
-        WorkspaceDB.delFile(card.pdfId).catch(() => {});
+        this.stashAndDeleteCardFile(card);
         this.board.pdfs = this.board.pdfs.filter(p => p.id !== card.pdfId);
       } else if (card.type === 'image') {
-        this.imgUrls.delete(card.imgId);
-        WorkspaceDB.delFile(card.imgId).catch(() => {});
+        this.stashAndDeleteCardFile(card);
         this.board.images = (this.board.images || []).filter(im => im.id !== card.imgId);
       }
     });
@@ -4448,6 +4560,7 @@ const Workspace = {
       toast(wsTr('ws.linkAlready', null, 'Esses cartões já estão ligados'), 'arrow');
       return null;
     }
+    this.pushUndo();
     opts = opts || {};
     const kind = opts.kind || 'relates';
     const defDir = typeof wsDefaultDirForKind === 'function'
@@ -4484,6 +4597,8 @@ const Workspace = {
 
   removeArrow(id) {
     const target = this.board.arrows.find(a => a.id === id);
+    if (!target) return;
+    this.pushUndo();
     this.board.arrows = this.board.arrows.filter(a => a.id !== id);
     const o = this.arrowEls.get(id);
     if (o) o.g.remove();
@@ -4862,6 +4977,8 @@ const Workspace = {
         this.scheduleSave();
       });
       inp.addEventListener('keydown', (e) => {
+        const k = String(e.key || '').toLowerCase();
+        if ((e.ctrlKey || e.metaKey) && !e.altKey && (k === 'z' || k === 'y')) return;
         e.stopPropagation();
         if (e.key === 'Enter' || e.key === 'Escape') {
           e.preventDefault();
@@ -4873,27 +4990,39 @@ const Workspace = {
     if (routeSel) {
       routeSel.addEventListener('pointerdown', (e) => e.stopPropagation());
       routeSel.addEventListener('change', () => {
-        a.routing = typeof wsNormalizeArrowRouting === 'function' ? wsNormalizeArrowRouting(routeSel.value, true) : routeSel.value;
-        this.updateArrow(a.id);
-        this.scheduleSave();
+        const nextVal = typeof wsNormalizeArrowRouting === 'function' ? wsNormalizeArrowRouting(routeSel.value, true) : routeSel.value;
+        if (a.routing !== nextVal) {
+          this.pushUndo();
+          a.routing = nextVal;
+          this.updateArrow(a.id);
+          this.scheduleSave();
+        }
       });
     }
     const styleSel = bar.querySelector('[data-arstyle]');
     if (styleSel) {
       styleSel.addEventListener('pointerdown', (e) => e.stopPropagation());
       styleSel.addEventListener('change', () => {
-        a.lineStyle = typeof wsNormalizeArrowLineStyle === 'function' ? wsNormalizeArrowLineStyle(styleSel.value, true) : styleSel.value;
-        this.updateArrow(a.id);
-        this.scheduleSave();
+        const nextVal = typeof wsNormalizeArrowLineStyle === 'function' ? wsNormalizeArrowLineStyle(styleSel.value, true) : styleSel.value;
+        if (a.lineStyle !== nextVal) {
+          this.pushUndo();
+          a.lineStyle = nextVal;
+          this.updateArrow(a.id);
+          this.scheduleSave();
+        }
       });
     }
     const widthSel = bar.querySelector('[data-arwidth]');
     if (widthSel) {
       widthSel.addEventListener('pointerdown', (e) => e.stopPropagation());
       widthSel.addEventListener('change', () => {
-        a.width = typeof wsNormalizeArrowWidth === 'function' ? wsNormalizeArrowWidth(widthSel.value, true) : Number(widthSel.value);
-        this.updateArrow(a.id);
-        this.scheduleSave();
+        const nextVal = typeof wsNormalizeArrowWidth === 'function' ? wsNormalizeArrowWidth(widthSel.value, true) : Number(widthSel.value);
+        if (a.width !== nextVal) {
+          this.pushUndo();
+          a.width = nextVal;
+          this.updateArrow(a.id);
+          this.scheduleSave();
+        }
       });
     }
     bar.querySelectorAll('[data-arcap]').forEach(sel => {
@@ -4901,10 +5030,14 @@ const Workspace = {
       sel.addEventListener('change', () => {
         const side = sel.dataset.arcap;
         const val = typeof wsNormalizeArrowCap === 'function' ? wsNormalizeArrowCap(sel.value) : sel.value;
-        if (side === 'start') a.startCap = val;
-        else a.endCap = val;
-        this.updateArrow(a.id);
-        this.scheduleSave();
+        const prevVal = side === 'start' ? a.startCap : a.endCap;
+        if (prevVal !== val) {
+          this.pushUndo();
+          if (side === 'start') a.startCap = val;
+          else a.endCap = val;
+          this.updateArrow(a.id);
+          this.scheduleSave();
+        }
       });
     });
     bar.onpointerdown = (e) => e.stopPropagation();
@@ -4914,24 +5047,31 @@ const Workspace = {
       if (kb) {
         const nextKind = kb.dataset.arkind;
         const prevKind = a.kind || 'relates';
-        a.kind = nextKind;
-        if (typeof wsDefaultDirForKind === 'function' && a.dir === wsDefaultDirForKind(prevKind)) {
-          a.dir = wsDefaultDirForKind(nextKind);
+        if (nextKind !== prevKind) {
+          this.pushUndo();
+          a.kind = nextKind;
+          if (typeof wsDefaultDirForKind === 'function' && a.dir === wsDefaultDirForKind(prevKind)) {
+            a.dir = wsDefaultDirForKind(nextKind);
+          }
+          this.updateArrow(a.id);
+          this.renderArrowTools();
+          this.scheduleSave();
         }
-        this.updateArrow(a.id);
-        this.renderArrowTools();
-        this.scheduleSave();
         return;
       }
       const db = e.target.closest('[data-ardir]');
       if (db) {
-        a.dir = db.dataset.ardir;
-        this.updateArrow(a.id);
-        this.renderArrowTools();
-        this.scheduleSave();
+        if (a.dir !== db.dataset.ardir) {
+          this.pushUndo();
+          a.dir = db.dataset.ardir;
+          this.updateArrow(a.id);
+          this.renderArrowTools();
+          this.scheduleSave();
+        }
         return;
       }
       if (e.target.closest('[data-arinvert]')) {
+        this.pushUndo();
         const tmp = a.from;
         a.from = a.to;
         a.to = tmp;
@@ -4946,10 +5086,13 @@ const Workspace = {
       }
       const cb = e.target.closest('[data-arcolor]');
       if (cb) {
-        a.color = cb.dataset.arcolor;
-        this.updateArrow(a.id);
-        this.renderArrowTools();
-        this.scheduleSave();
+        if ((a.color || '') !== (cb.dataset.arcolor || '')) {
+          this.pushUndo();
+          a.color = cb.dataset.arcolor;
+          this.updateArrow(a.id);
+          this.renderArrowTools();
+          this.scheduleSave();
+        }
         return;
       }
       if (e.target.closest('[data-aradv]')) {
@@ -5570,6 +5713,8 @@ const Workspace = {
     try { await WorkspaceDB.putFile(id, buf); }
     catch (e) { toast(wsTr('ws.pdf.saveErr', null, 'Sem espaço para salvar este PDF'), 'close'); return; }
 
+    this.undoFiles.set(id, buf);
+    this.pushUndo();
     const name = (file.name || 'Documento.pdf').replace(/\.pdf$/i, '');
     this.board.pdfs.push({ id, name, size: file.size, pages: 0, highlights: [] });
 
@@ -5676,6 +5821,8 @@ const Workspace = {
     try { await WorkspaceDB.putFile(id, dataUrl); }
     catch (e) { toast(wsTr('ws.img.saveErr', null, 'Sem espaço para salvar a imagem'), 'close'); return; }
 
+    this.undoFiles.set(id, dataUrl);
+    this.pushUndo();
     this.imgUrls.set(id, dataUrl);
     const rawName = file.name && !/^image\./i.test(file.name) ? file.name.replace(/\.[^.]+$/, '') : (opts.fromPaste ? wsTr('ws.img.pastedName', null, 'Print colado') : wsTr('ws.card.image', null, 'Imagem'));
     this.board.images = this.board.images || [];
@@ -5793,6 +5940,7 @@ const Workspace = {
     pop.addEventListener('click', (e) => {
       const b = e.target.closest('[data-hldel]');
       if (!b) return;
+      this.pushUndo();
       meta.highlights = (meta.highlights || []).filter(h => h.id !== b.dataset.hldel);
       this.renderHighlights(card);
       this.scheduleSave();
@@ -5917,17 +6065,38 @@ const Workspace = {
     if (world) {
       world.addEventListener('focusin', (e) => {
         const blocked = getBlockedCardControl(e.target);
-        if (!blocked) return;
-        if (typeof blocked.ctrl.blur === 'function') blocked.ctrl.blur();
-        this.clearCardTextSelection(blocked.cardNode);
+        if (blocked) {
+          if (typeof blocked.ctrl.blur === 'function') blocked.ctrl.blur();
+          this.clearCardTextSelection(blocked.cardNode);
+          return;
+        }
+        const ctrl = this.isPersistedTextControl(e.target);
+        if (ctrl) this.beginTextUndo(ctrl);
       });
       world.addEventListener('beforeinput', (e) => {
         const blocked = getBlockedCardControl(e.target);
-        if (!blocked) return;
-        e.preventDefault();
-        e.stopPropagation();
-        if (typeof blocked.ctrl.blur === 'function') blocked.ctrl.blur();
+        if (blocked) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (typeof blocked.ctrl.blur === 'function') blocked.ctrl.blur();
+          return;
+        }
+        const ctrl = this.isPersistedTextControl(e.target);
+        if (ctrl && (!this._textUndo || this._textUndo.el !== ctrl)) {
+          this.beginTextUndo(ctrl);
+        }
       }, true);
+      world.addEventListener('input', (e) => {
+        const ctrl = this.isPersistedTextControl(e.target);
+        if (ctrl) this.scheduleTextUndo(ctrl);
+      });
+      world.addEventListener('focusout', (e) => {
+        if (!this._textUndo || !this._textUndo.el) return;
+        const ctrl = e.target && e.target.closest ? e.target.closest('.ws-note-body, .ws-concept-title, .ws-concept-tags-inp, .ws-check-title, .ws-check-item-txt, .ws-group-title') : null;
+        if (ctrl && ctrl === this._textUndo.el) {
+          this.commitTextUndo(false);
+        }
+      });
       world.addEventListener('paste', (e) => {
         const blocked = getBlockedCardControl(e.target);
         if (!blocked) return;
@@ -5943,6 +6112,30 @@ const Workspace = {
         e.stopPropagation();
         if (typeof blocked.ctrl.blur === 'function') blocked.ctrl.blur();
       }, true);
+    }
+
+    if (this.els.arrowTools) {
+      this.els.arrowTools.addEventListener('focusin', (e) => {
+        const ctrl = this.isPersistedTextControl(e.target);
+        if (ctrl) this.beginTextUndo(ctrl);
+      });
+      this.els.arrowTools.addEventListener('beforeinput', (e) => {
+        const ctrl = this.isPersistedTextControl(e.target);
+        if (ctrl && (!this._textUndo || this._textUndo.el !== ctrl)) {
+          this.beginTextUndo(ctrl);
+        }
+      }, true);
+      this.els.arrowTools.addEventListener('input', (e) => {
+        const ctrl = this.isPersistedTextControl(e.target);
+        if (ctrl) this.scheduleTextUndo(ctrl);
+      });
+      this.els.arrowTools.addEventListener('focusout', (e) => {
+        if (!this._textUndo || !this._textUndo.el) return;
+        const ctrl = e.target && e.target.closest ? e.target.closest('[data-arlabel]') : null;
+        if (ctrl && ctrl === this._textUndo.el) {
+          this.commitTextUndo(false);
+        }
+      });
     }
 
     vp.addEventListener('pointerdown', (e) => this.onViewportPointerDown(e));
@@ -6434,8 +6627,8 @@ const Workspace = {
       '<span class="ws-ink-sep"></span>' +
       '<div class="ws-ink-group">' +
         '<button type="button" class="ws-ink-btn' + (this.inkSettingsOpen ? ' active' : '') + '" data-inkact="settings" title="' + wsEscape(wsTr('ws.ink.toolsTip', null, 'Precisão, pressão, ponta e disposição da barra')) + '" aria-expanded="' + (this.inkSettingsOpen ? 'true' : 'false') + '">' + svgIcon('sliders') + '<span>' + wsEscape(wsTr('ws.ink.tools', null, 'Ajustes')) + '</span></button>' +
-        '<button type="button" class="ws-ink-btn" data-inkact="undo" title="' + wsEscape(wsTr('ws.ink.undoTip', null, 'Desfazer traço (Ctrl+Z)')) + '"' + (this.inkUndo.length ? '' : ' disabled') + '>' + svgIcon('undo') + '</button>' +
-        '<button type="button" class="ws-ink-btn" data-inkact="redo" title="' + wsEscape(wsTr('ws.ink.redoTip', null, 'Refazer traço (Ctrl+Y)')) + '"' + (this.inkRedo.length ? '' : ' disabled') + '>' + svgIcon('redo') + '</button>' +
+        '<button type="button" class="ws-ink-btn" data-inkact="undo" title="' + wsEscape(wsTr('ws.ink.undoTip', null, 'Desfazer (Ctrl+Z)')) + '"' + (this.canUndo() ? '' : ' disabled') + '>' + svgIcon('undo') + '</button>' +
+        '<button type="button" class="ws-ink-btn" data-inkact="redo" title="' + wsEscape(wsTr('ws.ink.redoTip', null, 'Refazer (Ctrl+Y)')) + '"' + (this.canRedo() ? '' : ' disabled') + '>' + svgIcon('redo') + '</button>' +
         '<button type="button" class="ws-ink-btn" data-inkact="clear" title="' + wsEscape(wsTr('ws.ink.clearTip', null, 'Apagar todos os desenhos')) + '"' + (hasStrokes ? '' : ' disabled') + '>' + svgIcon('trash') + '</button>' +
         '<button type="button" class="ws-ink-btn" data-inkact="collapse" title="' + wsEscape(collapseTip) + '" aria-label="' + wsEscape(collapseTip) + '">' + svgIcon(collapseIcon) + '</button>' +
       '</div>' +
@@ -6655,32 +6848,391 @@ const Workspace = {
     this.els.shell.style.setProperty('--ws-cursor-ink', css);
   },
 
-  pushInkUndo() {
+  isTransientUndoInput(target) {
+    if (!target || !target.closest) return true;
+    if (!target.closest('.ws-card, #ws-arrow-tools')) return true;
+    if (target.closest('.ws-formula-input, .ws-pdf-sinput')) return true;
+    const checkAdd = target.closest('.ws-check-add input');
+    if (checkAdd) return String(checkAdd.value || '').length > 0;
+    return false;
+  },
+
+  isPersistedTextControl(target) {
+    if (!target || !target.closest) return null;
+    const ctrl = target.closest('.ws-note-body, .ws-concept-title, .ws-concept-tags-inp, .ws-check-title, .ws-check-item-txt, .ws-group-title, [data-arlabel]');
+    if (!ctrl) return null;
+    const cardNode = ctrl.closest('.ws-card');
+    if (cardNode) {
+      const cid = cardNode.dataset && cardNode.dataset.id;
+      if (!cid || !this.isCardEditable(cid)) return null;
+      return ctrl;
+    }
+    if (ctrl.closest('#ws-arrow-tools')) return ctrl;
+    return null;
+  },
+
+  captureUndoSnapshot() {
+    if (!this.board) return null;
+    if (typeof wsCloneBoardSnapshot === 'function') return wsCloneBoardSnapshot(this.board);
+    const key = JSON.stringify({
+      cards: this.board.cards || [],
+      arrows: this.board.arrows || [],
+      pdfs: this.board.pdfs || [],
+      images: this.board.images || [],
+      strokes: this.board.strokes || []
+    });
+    return { key, data: JSON.parse(key) };
+  },
+
+  canUndo() {
+    return !!(this.undoStack && this.undoStack.length) || !!(this._textUndo && this._textUndo.dirty);
+  },
+
+  canRedo() {
+    return !!(this.redoStack && this.redoStack.length);
+  },
+
+  syncUndoControls() {
+    if (this.els && this.els.topbar) this.updateTopbar();
+    if (this.drawMode && this.els && this.els.inkBar) {
+      const uBtn = this.els.inkBar.querySelector('[data-inkact="undo"]');
+      const rBtn = this.els.inkBar.querySelector('[data-inkact="redo"]');
+      if (uBtn) uBtn.disabled = !this.canUndo();
+      if (rBtn) rBtn.disabled = !this.canRedo();
+    }
+  },
+
+  pruneUndoFiles() {
+    if (!this.undoFiles || !this.undoFiles.size) return;
+    if (typeof wsCollectReferencedFileIds !== 'function') return;
+    const keep = wsCollectReferencedFileIds(this.board, this.undoStack, this.redoStack);
+    Array.from(this.undoFiles.keys()).forEach((fid) => {
+      if (!keep.has(fid)) this.undoFiles.delete(fid);
+    });
+  },
+
+  stashAndDeleteCardFile(card) {
+    if (!card) return;
+    const fileId = card.type === 'pdf' ? card.pdfId : (card.type === 'image' ? card.imgId : null);
+    if (!fileId) return;
+    if (card.type === 'image') {
+      const cached = this.imgUrls.get(fileId);
+      this.imgUrls.delete(fileId);
+      if (cached != null) {
+        this.undoFiles.set(fileId, cached);
+        WorkspaceDB.delFile(fileId).catch(() => {});
+        return;
+      }
+    }
+    if (this.undoFiles.has(fileId)) {
+      WorkspaceDB.delFile(fileId).catch(() => {});
+      return;
+    }
+    Promise.resolve(WorkspaceDB.getFile(fileId))
+      .then((data) => {
+        if (data != null) this.undoFiles.set(fileId, data);
+      })
+      .catch(() => {})
+      .finally(() => {
+        WorkspaceDB.delFile(fileId).catch(() => {});
+      });
+  },
+
+  beginTextUndo(ctrl) {
+    if (!ctrl || !this.board) return;
+    if (this._textUndo && this._textUndo.el === ctrl) return;
+    if (this._textUndo && this._textUndo.dirty) {
+      this.commitTextUndo(false);
+    }
+    this.clearTextUndo();
+    this._textUndo = {
+      el: ctrl,
+      beforeSnap: this.captureUndoSnapshot(),
+      dirty: false,
+      timer: null
+    };
+  },
+
+  scheduleTextUndo(ctrl) {
     if (!this.board) return;
-    const snap = JSON.parse(JSON.stringify(this.board.strokes || []));
-    this.inkUndo.push(snap);
-    if (this.inkUndo.length > 40) this.inkUndo.shift();
-    this.inkRedo = [];
+    if (!this._textUndo || (ctrl && this._textUndo.el !== ctrl)) {
+      this.beginTextUndo(ctrl);
+    }
+    if (!this._textUndo) return;
+    this._textUndo.dirty = true;
+    clearTimeout(this._textUndo.timer);
+    this._textUndo.timer = setTimeout(() => {
+      this.commitTextUndo(true);
+    }, 650);
+    this.syncUndoControls();
+  },
+
+  commitTextUndo(keepAlive) {
+    const tu = this._textUndo;
+    if (!tu) return false;
+    clearTimeout(tu.timer);
+    tu.timer = null;
+    let pushed = false;
+    if (tu.dirty && tu.beforeSnap) {
+      const currentSnap = this.captureUndoSnapshot();
+      const limit = typeof WS_UNDO_LIMIT !== 'undefined' ? WS_UNDO_LIMIT : 60;
+      const res = typeof wsPushUndoState === 'function'
+        ? wsPushUndoState(this.undoStack, this.redoStack, tu.beforeSnap, currentSnap, limit)
+        : { undoStack: (this.undoStack || []).concat([tu.beforeSnap]).slice(-limit), redoStack: [], pushed: true };
+      if (res.pushed) {
+        this.undoStack = res.undoStack;
+        this.redoStack = res.redoStack;
+        this.pruneUndoFiles();
+        pushed = true;
+      }
+      tu.dirty = false;
+      tu.beforeSnap = currentSnap;
+    }
+    if (!keepAlive) {
+      this._textUndo = null;
+    }
+    this.syncUndoControls();
+    return pushed;
+  },
+
+  refreshTextUndoBaseline() {
+    if (!this._textUndo || !this.board) return;
+    clearTimeout(this._textUndo.timer);
+    this._textUndo.timer = null;
+    this._textUndo.dirty = false;
+    this._textUndo.beforeSnap = this.captureUndoSnapshot();
+  },
+
+  clearTextUndo() {
+    if (this._textUndo && this._textUndo.timer) {
+      clearTimeout(this._textUndo.timer);
+    }
+    this._textUndo = null;
+  },
+
+  pushUndo(beforeSnap) {
+    if (!this.board || this._undoBatchDepth > 0) return false;
+    let snap = beforeSnap;
+    let afterSnap = null;
+    if (snap) {
+      afterSnap = this.captureUndoSnapshot();
+    } else {
+      if (this._textUndo && this._textUndo.dirty) {
+        this.commitTextUndo(false);
+      }
+      snap = this.captureUndoSnapshot();
+    }
+    if (!snap) return false;
+    const limit = typeof WS_UNDO_LIMIT !== 'undefined' ? WS_UNDO_LIMIT : 60;
+    const res = typeof wsPushUndoState === 'function'
+      ? wsPushUndoState(this.undoStack, this.redoStack, snap, afterSnap, limit)
+      : { undoStack: (this.undoStack || []).concat([snap]).slice(-limit), redoStack: [], pushed: true };
+    if (!res.pushed) return false;
+    this.undoStack = res.undoStack;
+    this.redoStack = res.redoStack;
+    this.pruneUndoFiles();
+    this.syncUndoControls();
+    return true;
+  },
+
+  runUndoBatch(fn) {
+    if (typeof fn !== 'function') return undefined;
+    if (this._undoBatchDepth > 0) return fn();
+    if (this._textUndo && this._textUndo.dirty) {
+      this.commitTextUndo(false);
+    }
+    const before = this.captureUndoSnapshot();
+    this._undoBatchDepth++;
+    try {
+      return fn();
+    } finally {
+      this._undoBatchDepth = Math.max(0, this._undoBatchDepth - 1);
+      if (this._undoBatchDepth === 0 && before) {
+        this.pushUndo(before);
+      }
+    }
+  },
+
+  restoreUndoSnapshot(snapshot) {
+    if (!this.board || !snapshot || !snapshot.data) return;
+    const data = JSON.parse(JSON.stringify(snapshot.data));
+    const prevCards = Array.isArray(this.board.cards) ? this.board.cards : [];
+    const nextCards = Array.isArray(data.cards) ? data.cards : [];
+    const prevPdfs = Array.isArray(this.board.pdfs) ? this.board.pdfs : [];
+    const nextPdfs = Array.isArray(data.pdfs) ? data.pdfs : [];
+    const prevImgs = Array.isArray(this.board.images) ? this.board.images : [];
+    const nextImgs = Array.isArray(data.images) ? data.images : [];
+
+    const prevPdfIds = new Set(prevPdfs.map(p => p && p.id).filter(Boolean));
+    const nextPdfIds = new Set(nextPdfs.map(p => p && p.id).filter(Boolean));
+    const prevImgIds = new Set(prevImgs.map(im => im && im.id).filter(Boolean));
+    const nextImgIds = new Set(nextImgs.map(im => im && im.id).filter(Boolean));
+
+    this.cardDrag = null;
+    this.strokeDrag = null;
+    this.cardResize = null;
+    this.marquee = null;
+    this.pdfPress = null;
+    this.pdfPan = null;
+    this.imgPan = null;
+    this.selDrag = null;
+    this.removeDragGhost();
+    this.hideSnapOverlay();
+    this.hideSelectionTools();
+    this.clearNativeSelection();
+    this.cancelLink();
+    if (this.els.shell) this.els.shell.classList.remove('dragging-card');
+
+    prevPdfIds.forEach((pdfId) => {
+      if (!nextPdfIds.has(pdfId)) {
+        const doc = this.pdfDocs.get(pdfId);
+        if (doc && doc.destroy) { try { doc.destroy(); } catch (e) { /* ignora */ } }
+        this.pdfDocs.delete(pdfId);
+        this.pdfPromises.delete(pdfId);
+        this.pdfTextCache.delete(pdfId);
+        if (this.undoFiles.has(pdfId)) {
+          WorkspaceDB.delFile(pdfId).catch(() => {});
+        } else {
+          Promise.resolve(WorkspaceDB.getFile(pdfId))
+            .then((d) => { if (d != null) this.undoFiles.set(pdfId, d); })
+            .catch(() => {})
+            .finally(() => WorkspaceDB.delFile(pdfId).catch(() => {}));
+        }
+      }
+    });
+    prevImgIds.forEach((imgId) => {
+      if (!nextImgIds.has(imgId)) {
+        const cached = this.imgUrls.get(imgId);
+        this.imgUrls.delete(imgId);
+        if (cached != null && !this.undoFiles.has(imgId)) {
+          this.undoFiles.set(imgId, cached);
+        }
+        if (this.undoFiles.has(imgId)) {
+          WorkspaceDB.delFile(imgId).catch(() => {});
+        } else {
+          Promise.resolve(WorkspaceDB.getFile(imgId))
+            .then((d) => { if (d != null) this.undoFiles.set(imgId, d); })
+            .catch(() => {})
+            .finally(() => WorkspaceDB.delFile(imgId).catch(() => {}));
+        }
+      }
+    });
+    prevCards.forEach((c) => {
+      if (c) {
+        this.pdfRendered.delete(c.id);
+        this.pdfPageDims.delete(c.id);
+        this.pdfSearch.delete(c.id);
+        this.pdfTokens.set(c.id, 'revoked');
+      }
+    });
+
+    const putPromises = [];
+    nextPdfIds.forEach((pdfId) => {
+      if (this.undoFiles.has(pdfId)) {
+        const fileData = this.undoFiles.get(pdfId);
+        putPromises.push(Promise.resolve(WorkspaceDB.putFile(pdfId, fileData)).catch(() => {}));
+      }
+    });
+    nextImgIds.forEach((imgId) => {
+      if (this.undoFiles.has(imgId)) {
+        const fileData = this.undoFiles.get(imgId);
+        this.imgUrls.set(imgId, fileData);
+        putPromises.push(Promise.resolve(WorkspaceDB.putFile(imgId, fileData)).catch(() => {}));
+      }
+    });
+
+    this.board.cards = nextCards;
+    this.board.arrows = Array.isArray(data.arrows) ? data.arrows : [];
+    this.board.pdfs = nextPdfs;
+    this.board.images = nextImgs;
+    this.board.strokes = Array.isArray(data.strokes) ? data.strokes : [];
+
+    const validCardIds = new Set(this.board.cards.map(c => c && c.id).filter(Boolean));
+    const validStrokeIds = new Set(this.board.strokes.map(s => s && s.id).filter(Boolean));
+    this.selectedIds = new Set(Array.from(this.selectedIds).filter(id => validCardIds.has(id)));
+    this.selectedStrokes = new Set(Array.from(this.selectedStrokes).filter(id => validStrokeIds.has(id)));
+    if (!this.selectedIds.has(this.selCard)) {
+      const rem = Array.from(this.selectedIds);
+      this.selCard = rem.length ? rem[rem.length - 1] : null;
+    }
+    if (this.selArrow && !this.board.arrows.some(a => a && a.id === this.selArrow)) {
+      this.selArrow = null;
+    }
+
+    this.clearTextUndo();
+    this.blurCardInputs();
+    this.renderAll();
+    this.syncSelectionClasses();
+    this.updateArrowSelection();
+    this.renderArrowTools();
+    this.renderMultiTools();
+    this.renderInk();
+    this.renderInkBar();
+    this.updateEmpty();
+    this.syncUndoControls();
+    this.flushSave();
+
+    if (this.popover === 'search') this.renderSearchResults();
+    else if (this.popover === 'connections' && this.connCardId) {
+      const connCard = this.board.cards.find(c => c.id === this.connCardId);
+      if (connCard) this.openConnectionsPopover(connCard);
+      else this.closePopover();
+    }
+
+    if (putPromises.length) {
+      Promise.all(putPromises).then(() => {
+        if (this.entered) this.refreshPdfs();
+      });
+    } else if (this.entered && nextPdfs.length) {
+      setTimeout(() => { if (this.entered) this.refreshPdfs(); }, 20);
+    }
+  },
+
+  undo() {
+    if (!this.board) return false;
+    if (this._textUndo && this._textUndo.dirty) {
+      this.commitTextUndo(false);
+    }
+    if (!this.undoStack.length) return false;
+    const currentSnap = this.captureUndoSnapshot();
+    const limit = typeof WS_UNDO_LIMIT !== 'undefined' ? WS_UNDO_LIMIT : 60;
+    const res = typeof wsStepUndoState === 'function'
+      ? wsStepUndoState(this.undoStack, this.redoStack, currentSnap, limit)
+      : { ok: true, undoStack: this.undoStack.slice(0, -1), redoStack: this.redoStack.concat([currentSnap]), snapshot: this.undoStack[this.undoStack.length - 1] };
+    if (!res.ok || !res.snapshot) return false;
+    this.undoStack = res.undoStack;
+    this.redoStack = res.redoStack;
+    this.restoreUndoSnapshot(res.snapshot);
+    return true;
+  },
+
+  redo() {
+    if (!this.board || !this.redoStack.length) return false;
+    if (this._textUndo && this._textUndo.dirty) {
+      this.commitTextUndo(false);
+    }
+    const currentSnap = this.captureUndoSnapshot();
+    const limit = typeof WS_UNDO_LIMIT !== 'undefined' ? WS_UNDO_LIMIT : 60;
+    const res = typeof wsStepRedoState === 'function'
+      ? wsStepRedoState(this.undoStack, this.redoStack, currentSnap, limit)
+      : { ok: true, undoStack: this.undoStack.concat([currentSnap]), redoStack: this.redoStack.slice(0, -1), snapshot: this.redoStack[this.redoStack.length - 1] };
+    if (!res.ok || !res.snapshot) return false;
+    this.undoStack = res.undoStack;
+    this.redoStack = res.redoStack;
+    this.restoreUndoSnapshot(res.snapshot);
+    return true;
+  },
+
+  pushInkUndo() {
+    return this.pushUndo();
   },
 
   undoInk() {
-    if (!this.inkUndo.length || !this.board) return;
-    this.inkRedo.push(JSON.parse(JSON.stringify(this.board.strokes || [])));
-    this.board.strokes = this.inkUndo.pop();
-    this.renderInk();
-    this.renderInkBar();
-    this.updateEmpty();
-    this.flushSave();
+    return this.undo();
   },
 
   redoInk() {
-    if (!this.inkRedo.length || !this.board) return;
-    this.inkUndo.push(JSON.parse(JSON.stringify(this.board.strokes || [])));
-    this.board.strokes = this.inkRedo.pop();
-    this.renderInk();
-    this.renderInkBar();
-    this.updateEmpty();
-    this.flushSave();
+    return this.redo();
   },
 
   async clearInk() {
@@ -6692,7 +7244,7 @@ const Workspace = {
       danger: true
     });
     if (!ok) return;
-    this.pushInkUndo();
+    this.pushUndo();
     this.board.strokes = [];
     this.renderInk();
     this.renderInkBar();
@@ -6824,6 +7376,7 @@ const Workspace = {
       .map(c => ({ card: c, origX: c.x, origY: c.y }));
     const origStrokesBox = typeof wsStrokesBounds === 'function' ? wsStrokesBounds(selList) : null;
 
+    const undoSnap = this.captureUndoSnapshot();
     this.strokeDrag = {
       id: e.pointerId,
       start,
@@ -6832,7 +7385,7 @@ const Workspace = {
       rawDx: 0,
       rawDy: 0,
       moved: false,
-      pushedUndo: false,
+      undoSnap,
       strokes: strokeItems,
       cards: cardItems,
       origStrokesBox
@@ -7311,12 +7864,8 @@ const Workspace = {
       d.rawDy = p.y - d.start.y;
       if (!d.moved && Math.hypot(e.clientX - d.screenX, e.clientY - d.screenY) > 3) {
         d.moved = true;
-        if (d.multiStrokes && d.multiStrokes.length && !d.pushedInkUndo) {
-          this.pushInkUndo();
-          d.pushedInkUndo = true;
-        }
       }
-      this.applyCardDragPositions(d, !!e.shiftKey);
+      if (d.moved) this.applyCardDragPositions(d, !!e.shiftKey);
       return;
     }
 
@@ -7327,12 +7876,8 @@ const Workspace = {
       d.rawDy = p.y - d.start.y;
       if (!d.moved && Math.hypot(e.clientX - d.screenX, e.clientY - d.screenY) > 3) {
         d.moved = true;
-        if (!d.pushedUndo) {
-          this.pushInkUndo();
-          d.pushedUndo = true;
-        }
       }
-      this.applyStrokeDragPositions(d, !!e.shiftKey);
+      if (d.moved) this.applyStrokeDragPositions(d, !!e.shiftKey);
       return;
     }
 
@@ -7484,6 +8029,7 @@ const Workspace = {
       }
       if (e.shiftKey && !this.drawMode) this.showSnapPreviewFromSelection();
       else this.hideSnapOverlay();
+      if (d.moved && d.undoSnap) this.pushUndo(d.undoSnap);
       this.scheduleSave();
       return;
     }
@@ -7497,6 +8043,7 @@ const Workspace = {
       }
       this.hideSnapOverlay();
       if (d.moved) {
+        if (d.undoSnap) this.pushUndo(d.undoSnap);
         this.renderInk();
         this.flushSave();
       }
@@ -7526,6 +8073,9 @@ const Workspace = {
       this.cardResize = null;
       if (e.shiftKey) this.showSnapPreviewFromSelection();
       else this.hideSnapOverlay();
+      if (r.undoSnap && (r.card.w !== r.origW || r.card.h !== r.origH)) {
+        this.pushUndo(r.undoSnap);
+      }
       this.scheduleSave();
       if (r.card.type === 'pdf') this.renderPdfCard(r.card, true);
       else if (r.card.type === 'image') this.renderImageCard(r.card);
@@ -7601,18 +8151,21 @@ const Workspace = {
   },
 
   createLinkedNoteAt(card, clientX, clientY) {
-    const p = this.screenToWorld(clientX, clientY);
-    const note = this.addNote({
-      x: Math.max(card.x + card.w + 26, p.x + 28),
-      y: p.y - 70,
-      w: 280,
-      h: 170,
-      text: '',
-      source: { pdfId: card.pdfId, page: card.page },
-      focus: true
+    return this.runUndoBatch(() => {
+      const p = this.screenToWorld(clientX, clientY);
+      const note = this.addNote({
+        x: Math.max(card.x + card.w + 26, p.x + 28),
+        y: p.y - 70,
+        w: 280,
+        h: 170,
+        text: '',
+        source: { pdfId: card.pdfId, page: card.page },
+        focus: true
+      });
+      this.makeArrow(card.id, note.id);
+      toast(wsTr('ws.pdf.noteLinkedToast', { page: card.page }, 'Cartão ligado à p. ' + card.page + ' criado'), 'file');
+      return note;
     });
-    this.makeArrow(card.id, note.id);
-    toast(wsTr('ws.pdf.noteLinkedToast', { page: card.page }, 'Cartão ligado à p. ' + card.page + ' criado'), 'file');
   },
 
   onDocPointerDown(e) {
@@ -7669,6 +8222,18 @@ const Workspace = {
       return;
     }
 
+    if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+      const k = String(e.key || '').toLowerCase();
+      if (k === 'z' || k === 'y') {
+        if (document.body.classList.contains('panel-open') || this.confirmOpen) return;
+        if (editing && this.isTransientUndoInput(e.target)) return;
+        e.preventDefault();
+        if (k === 'z' && !e.shiftKey) this.undo();
+        else this.redo();
+        return;
+      }
+    }
+
     if (e.key === 'Escape') {
       if (this.inkSettingsOpen) {
         this.closeInkSettings();
@@ -7721,11 +8286,6 @@ const Workspace = {
       this.syncInkPanCursor();
       this.renderInkBar();
       return;
-    }
-    if ((e.ctrlKey || e.metaKey) && this.drawMode) {
-      const k = e.key.toLowerCase();
-      if (k === 'z' && !e.shiftKey) { e.preventDefault(); this.undoInk(); return; }
-      if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); this.redoInk(); return; }
     }
     if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'v' || e.key === 'V')) {
       e.preventDefault();
@@ -7830,6 +8390,7 @@ const Workspace = {
         .filter(Boolean)
         .map(c => ({ card: c, origX: c.x, origY: c.y }));
     }
+    const undoSnap = this.captureUndoSnapshot();
     this.cardDrag = {
       card,
       start,
@@ -7839,7 +8400,7 @@ const Workspace = {
       children,
       multiCards,
       multiStrokes,
-      pushedInkUndo: false,
+      undoSnap,
       shiftToggleCandidate,
       screenX: e.clientX,
       screenY: e.clientY,
@@ -8057,6 +8618,7 @@ const Workspace = {
     e.stopPropagation();
     this.blurCardInputs();
     this.select(card.id);
+    const undoSnap = this.captureUndoSnapshot();
     this.cardResize = {
       card,
       startX: e.clientX,
@@ -8065,6 +8627,7 @@ const Workspace = {
       origH: card.h,
       rawW: card.w,
       rawH: card.h,
+      undoSnap,
       id: e.pointerId
     };
     if (e.shiftKey) this.applyCardResize(this.cardResize, true);
@@ -8266,6 +8829,7 @@ const Workspace = {
     const meta = this.pdfMeta(sel.card);
     if (!meta || !rects.length) return;
 
+    this.pushUndo();
     meta.highlights = meta.highlights || [];
     meta.highlights.push({
       id: uid(),
