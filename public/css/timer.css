@@ -208,58 +208,283 @@ body[data-timer-view="focus"] .timer-stage {
 }
 body[data-timer-view="focus"] .timer-stage:active { cursor: grabbing; }
 body[data-timer-view="focus"] .timer-display { pointer-events: none; }
+body[data-timer-view="focus"] .ring {
+  transition:
+    stroke-dashoffset .3s linear,
+    stroke .3s ease,
+    opacity .28s cubic-bezier(.16, 1, .3, 1),
+    transform .3s cubic-bezier(.16, 1, .3, 1),
+    filter .28s cubic-bezier(.16, 1, .3, 1);
+}
+body[data-timer-view="focus"] .timer-display {
+  transition:
+    opacity .28s cubic-bezier(.16, 1, .3, 1),
+    transform .3s cubic-bezier(.16, 1, .3, 1),
+    filter .28s cubic-bezier(.16, 1, .3, 1),
+    background .35s ease,
+    border-color .35s ease,
+    padding .35s ease,
+    border-radius .35s ease,
+    box-shadow .35s ease;
+}
 
-/* halo radial de ações */
+/* escurecimento leve do fundo e desfoque sutil do timer com fade */
+#halo-backdrop {
+  position: fixed; inset: 0; z-index: 24;
+  pointer-events: none;
+  opacity: 0; visibility: hidden;
+  background: radial-gradient(circle at 50% 48%,
+    rgba(6, 9, 18, .22) 0%,
+    rgba(4, 7, 15, .32) 55%,
+    rgba(2, 4, 10, .44) 100%);
+  transition: opacity .3s cubic-bezier(.16, 1, .3, 1), visibility 0s .32s;
+}
+body.halo-open #halo-backdrop {
+  opacity: 1; visibility: visible;
+  transition: opacity .26s cubic-bezier(.16, 1, .3, 1), visibility 0s;
+}
+body.halo-open #app { z-index: 26; }
+body.halo-open .timer-stage .ring {
+  opacity: .34;
+  transform: rotate(-90deg) scale(.94);
+  filter: blur(3.5px);
+}
+body.halo-open .timer-stage .timer-display {
+  opacity: .36;
+  transform: scale(.94);
+  filter: blur(5px);
+}
+body.halo-open .timer-stage::before { opacity: .12 !important; }
+
+/* confirmação minimalista ao soltar uma ação */
+.timer-stage::after {
+  content: ''; position: absolute; inset: 12%; border-radius: 50%;
+  border: 1.5px solid var(--accent);
+  opacity: 0; pointer-events: none;
+  transform: scale(.88);
+}
+.timer-stage.halo-commit::after {
+  animation: haloCommitRing .38s cubic-bezier(.16, 1, .3, 1);
+}
+@keyframes haloCommitRing {
+  0%   { opacity: .65; transform: scale(.88); }
+  100% { opacity: 0; transform: scale(1.16); }
+}
+
+/* halo radial minimalista */
 .timer-halo {
   position: absolute; inset: 0; z-index: 3;
-  display: grid; place-items: center;
   opacity: 0; visibility: hidden; pointer-events: none;
-  transition: opacity .25s ease, visibility 0s .25s;
+  transition: opacity .26s cubic-bezier(.16, 1, .3, 1), visibility 0s .28s;
+}
+.timer-halo::before {
+  content: ''; position: absolute; inset: -38%; z-index: 0;
+  border-radius: 50%; pointer-events: none;
+  background: radial-gradient(closest-side at 50% 50%,
+    rgba(8, 12, 24, .34) 0%,
+    rgba(8, 12, 24, .16) 50%,
+    transparent 100%);
+  opacity: 0; transform: scale(.9);
+  transition:
+    opacity .32s cubic-bezier(.16, 1, .3, 1),
+    transform .32s cubic-bezier(.16, 1, .3, 1);
 }
 body.halo-open .timer-halo {
   opacity: 1; visibility: visible;
-  transition: opacity .18s ease, visibility 0s;
+  transition: opacity .22s cubic-bezier(.16, 1, .3, 1), visibility 0s;
 }
-.timer-halo::before {
-  content: ''; position: absolute; inset: 5%; border-radius: 50%;
-  border: 1px solid var(--border);
-  background: radial-gradient(circle at center, transparent 38%, var(--accent-soft) 100%);
-  box-shadow: inset 0 0 50px rgba(0,0,0,.18), 0 0 64px var(--accent-glow);
-  opacity: .9;
-  transform: scale(.9);
-  transition: transform .35s cubic-bezier(.2, 1.3, .4, 1);
+body.halo-open .timer-halo::before {
+  opacity: 1; transform: scale(1);
 }
-body.halo-open .timer-halo::before { transform: scale(1); }
 
+.halo-orbit {
+  position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1;
+  overflow: visible; pointer-events: none;
+  transform: scale(.9);
+  opacity: 0;
+  transition:
+    transform .28s cubic-bezier(.16, 1, .3, 1),
+    opacity .22s ease;
+}
+body.halo-open .halo-orbit {
+  transform: scale(1);
+  opacity: 1;
+}
+.halo-track {
+  fill: none;
+  stroke: rgba(255, 255, 255, .20);
+  stroke-width: 1;
+}
+.halo-inner-track {
+  fill: none;
+  stroke: rgba(255, 255, 255, .18);
+  stroke-width: .9;
+  stroke-dasharray: 2 4;
+  transition: stroke .2s ease, opacity .2s ease;
+}
+body.halo-has-active .halo-inner-track {
+  stroke: var(--accent);
+  opacity: .42;
+}
+.halo-arc {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  transform-origin: 100px 100px;
+  opacity: 0;
+  filter: drop-shadow(0 0 8px var(--accent-glow));
+  transition:
+    transform .2s cubic-bezier(.16, 1, .3, 1),
+    opacity .16s ease;
+}
+body.halo-has-active .halo-arc { opacity: .96; }
+
+.halo-tether {
+  stroke: rgba(255, 255, 255, .45);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  transition: stroke .16s ease, opacity .16s ease;
+}
+body.halo-has-active .halo-tether {
+  stroke: var(--accent);
+  opacity: .92;
+}
+.halo-tip {
+  fill: rgba(255, 255, 255, .90);
+  opacity: 0;
+  transition: opacity .15s ease, fill .15s ease;
+}
+body.halo-open .halo-tip { opacity: .95; }
+body.halo-has-active .halo-tip { fill: var(--accent); }
+
+/* ponto de origem central */
+.halo-center {
+  position: absolute; inset: 0; z-index: 1;
+  pointer-events: none;
+}
+.halo-origin {
+  position: absolute; left: 50%; top: 50%;
+  width: 7px; height: 7px; border-radius: 50%;
+  transform: translate(-50%, -50%) scale(.6);
+  border: 1.5px solid rgba(255, 255, 255, .72);
+  background: transparent;
+  transition:
+    transform .22s cubic-bezier(.16, 1, .3, 1),
+    background .16s ease,
+    border-color .16s ease,
+    box-shadow .16s ease;
+}
+body.halo-open .halo-origin { transform: translate(-50%, -50%) scale(1); }
+body.halo-has-active .halo-origin {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 12px var(--accent-glow);
+  transform: translate(-50%, -50%) scale(1.15);
+}
+
+/* quatro elementos cardeais */
 .halo-act {
-  position: absolute;
-  display: flex; flex-direction: column; align-items: center; gap: 5px;
-  color: var(--text-dim);
-  transition: color .18s ease;
+  position: absolute; z-index: 1;
+  pointer-events: none;
 }
+.halo-act[data-dir="up"]    { left: 50%; top: 12%; transform: translate(-50%, -22px); }
+.halo-act[data-dir="right"] { left: 88%; top: 50%; transform: translate(-50%, -22px); }
+.halo-act[data-dir="down"]  { left: 50%; top: 88%; transform: translate(-50%, -22px); }
+.halo-act[data-dir="left"]  { left: 12%; top: 50%; transform: translate(-50%, -22px); }
+
+.halo-node {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  color: rgba(244, 247, 255, .94);
+  opacity: 0;
+  transition:
+    transform .26s cubic-bezier(.16, 1, .3, 1),
+    opacity .18s ease,
+    color .16s ease;
+}
+.halo-act[data-dir="up"]    .halo-node { transform: translateY(14px) scale(.78); transition-delay: 0ms; }
+.halo-act[data-dir="right"] .halo-node { transform: translateX(-14px) scale(.78); transition-delay: 24ms; }
+.halo-act[data-dir="down"]  .halo-node { transform: translateY(-14px) scale(.78); transition-delay: 48ms; }
+.halo-act[data-dir="left"]  .halo-node { transform: translateX(14px) scale(.78); transition-delay: 72ms; }
+
+body.halo-open .halo-node {
+  opacity: 1;
+  transform: translate(0, 0) scale(1);
+}
+body.halo-has-active .halo-act:not(.active) .halo-node {
+  opacity: .76;
+  transform: scale(.96);
+  transition-delay: 0ms;
+}
+body.halo-has-active .halo-act.active .halo-node {
+  opacity: 1;
+  transform: scale(1.04);
+  transition-delay: 0ms;
+}
+
 .halo-icon {
-  width: 42px; height: 42px; border-radius: 50%;
+  position: relative;
+  width: 44px; height: 44px; border-radius: 50%;
   display: grid; place-items: center;
-  background: var(--glass); border: 1px solid var(--border);
-  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-  box-shadow: 0 8px 24px rgba(0,0,0,.22);
-  transition: color .18s ease, border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+  background: rgba(20, 26, 46, .88);
+  border: 1px solid rgba(255, 255, 255, .32);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, .42);
+  transition:
+    background .18s ease,
+    color .18s ease,
+    border-color .18s ease,
+    box-shadow .18s ease,
+    transform .2s cubic-bezier(.16, 1, .3, 1);
 }
-.halo-icon .icon { width: 18px; height: 18px; }
+.halo-icon::after {
+  content: ''; position: absolute; inset: -3px; border-radius: 50%;
+  border: 1px solid var(--accent);
+  opacity: 0; transform: scale(.86);
+  pointer-events: none;
+}
+.halo-icon .icon { width: 18px; height: 18px; display: block; }
 .halo-label {
-  font-size: 9.5px; letter-spacing: .16em; text-transform: uppercase;
-  color: var(--text-faint);
-  transition: color .18s ease;
+  font-size: 9.5px; font-weight: 500;
+  letter-spacing: .16em; text-transform: uppercase;
+  white-space: nowrap;
+  color: rgba(242, 246, 255, .92);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, .58), 0 0 2px rgba(0, 0, 0, .38);
+  transition: color .18s ease, opacity .18s ease;
 }
+
 .halo-act.active { color: var(--accent); }
 .halo-act.active .halo-icon {
-  color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast);
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft), 0 0 28px var(--accent-glow);
-  transform: scale(1.08);
+  box-shadow:
+    0 0 0 4px var(--accent-soft),
+    0 10px 28px var(--accent-glow);
+  transform: scale(1.1);
 }
-.halo-act.active .halo-label { color: var(--accent); }
-.halo-act[data-dir="up"]    { top: 6%;    left: 50%; transform: translateX(-50%); }
-.halo-act[data-dir="down"]  { bottom: 4%; left: 50%; transform: translateX(-50%); }
-.halo-act[data-dir="right"] { right: 2%;  top: 50%;  transform: translateY(-50%); }
-.halo-act[data-dir="left"]  { left: 2%;   top: 50%;  transform: translateY(-50%); }
+.halo-act.active .halo-icon::after {
+  animation: haloRipple .45s cubic-bezier(.16, 1, .3, 1);
+}
+@keyframes haloRipple {
+  0%   { opacity: .85; transform: scale(.9); }
+  100% { opacity: 0; transform: scale(1.48); }
+}
+.halo-act.active .halo-label {
+  color: rgba(255, 255, 255, .98);
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #halo-backdrop,
+  .timer-halo,
+  .timer-halo::before,
+  .halo-orbit,
+  .halo-arc,
+  .halo-origin,
+  .halo-node,
+  .halo-icon,
+  body[data-timer-view="focus"] .ring,
+  body[data-timer-view="focus"] .timer-display { transition: none !important; }
+  .timer-stage.halo-commit::after,
+  .halo-act.active .halo-icon::after { animation: none !important; }
+}

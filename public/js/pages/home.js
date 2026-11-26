@@ -180,7 +180,7 @@ const HomePage = {
           chip.lastChild.textContent = tr('home.chip.stopwatch', 'cronômetro');
           chip.addEventListener('click', () => {
             if (typeof TimerPage !== 'undefined') TimerPage.setTab('stopwatch');
-            location.hash = '#/cronometro';
+            location.hash = '#/tempo';
           });
           break;
         }

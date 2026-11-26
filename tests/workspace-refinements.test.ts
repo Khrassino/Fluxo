@@ -186,7 +186,7 @@ test('Workspace avoids native window.confirm so PDF and card deletion works insi
   assert.ok(code.includes('requestRemoveCard('));
 });
 
-test('WS_BG_SWATCHES exposes 14 unique options formatted in a 7x2 background grid', () => {
+test('WS_BG_SWATCHES exposes 14 unique options formatted in a 7x2 background grid with distinct light tones', () => {
   const ctx = loadWorkspaceContext();
   const swatches = JSON.parse(vm.runInContext('JSON.stringify(WS_BG_SWATCHES)', ctx)) as string[];
   assert.equal(swatches.length, 14);
@@ -195,6 +195,24 @@ test('WS_BG_SWATCHES exposes 14 unique options formatted in a 7x2 background gri
   swatches.slice(1).forEach((hex) => {
     assert.match(hex, /^#[0-9a-f]{6}$/i);
   });
+
+  const parseRgb = (hex: string) => [
+    parseInt(hex.slice(1, 3), 16),
+    parseInt(hex.slice(3, 5), 16),
+    parseInt(hex.slice(5, 7), 16),
+  ];
+  const lightSwatches = swatches.slice(7);
+  assert.equal(lightSwatches.length, 7);
+  for (let i = 0; i < lightSwatches.length; i++) {
+    const a = parseRgb(lightSwatches[i]);
+    const lum = (0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2]) / 255;
+    assert.ok(lum > 0.72, `expected light swatch ${lightSwatches[i]} to stay bright`);
+    for (let j = i + 1; j < lightSwatches.length; j++) {
+      const b = parseRgb(lightSwatches[j]);
+      const dist = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+      assert.ok(dist >= 25, `expected light swatches ${lightSwatches[i]} and ${lightSwatches[j]} to be clearly distinct (dist=${dist.toFixed(1)})`);
+    }
+  }
 
   const css = fs.readFileSync(path.resolve(process.cwd(), 'public/css/workspace.css'), 'utf8');
   assert.match(css, /\.ws-bg-color-grid\s*\{[^}]*grid-template-columns:\s*repeat\(7,\s*minmax\(0,\s*1fr\)\)/);

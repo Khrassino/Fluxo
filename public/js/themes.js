@@ -2,33 +2,34 @@
 /* ============ themes.js — temas, papéis de parede e fontes ============ */
 
 const THEMES = [
-  { id: 'aurora',    label: 'Aurora',         icon: 'sparkle', bg: '#0a0e1e', accent: '#8fa2ff', accent2: '#5fe3c4', ink: '#edf1ff' },
-  { id: 'meianoite', label: 'Noite',          icon: 'moon',    bg: '#070b14', accent: '#38bdf8', accent2: '#818cf8', ink: '#f1f5f9' },
-  { id: 'floresta',  label: 'Floresta',       icon: 'leaf',    bg: '#09120e', accent: '#34d399', accent2: '#a7f3d0', ink: '#eaf5ec' },
-  { id: 'carvao',    label: 'Obsidiana',      icon: 'grid',    bg: '#0d0e11', accent: '#f4f4f5', accent2: '#a1a1aa', ink: '#f4f4f5' },
-  { id: 'retro',     label: 'Carmesim',       icon: 'disc',    bg: '#0c0709', accent: '#f43f5e', accent2: '#fb923c', ink: '#fff1f2' },
-  { id: 'neon',      label: 'Neon',           icon: 'bolt',    bg: '#08070d', accent: '#d946ef', accent2: '#06b6d4', ink: '#faf5ff' },
-  { id: 'amanhecer', label: 'Alvorada',       icon: 'sun',     bg: '#faf6f0', accent: '#ea580c', accent2: '#f59e0b', ink: '#292524' },
-  { id: 'neve',      label: 'Neve',           icon: 'snow',    bg: '#f8fafc', accent: '#2563eb', accent2: '#38bdf8', ink: '#0f172a' },
-  { id: 'flowers',   label: 'Flowers',        icon: 'flower',  bg: '#150c12', accent: '#f4a5b8', accent2: '#8ec49e', ink: '#fdf3f6' },
-  { id: 'march',     label: 'March',          icon: 'flame',   bg: '#0c0a09', accent: '#f59e0b', accent2: '#ef4444', ink: '#f6efe8' },
-  { id: 'custom',    label: 'Personalizado',  icon: 'palette', bg: '#0a0e1e', accent: '#8fa2ff', accent2: '#5fe3c4', ink: '#edf1ff' }
+  { id: 'aurora',    label: 'Aurora',         tone: 'dark',   icon: 'sparkle', bg: '#0a0e1e', accent: '#8fa2ff', accent2: '#5fe3c4', ink: '#edf1ff' },
+  { id: 'meianoite', label: 'Noite',          tone: 'dark',   icon: 'moon',    bg: '#070b14', accent: '#38bdf8', accent2: '#818cf8', ink: '#f1f5f9' },
+  { id: 'floresta',  label: 'Floresta',       tone: 'dark',   icon: 'leaf',    bg: '#09120e', accent: '#34d399', accent2: '#a7f3d0', ink: '#eaf5ec' },
+  { id: 'carvao',    label: 'Obsidiana',      tone: 'dark',   icon: 'grid',    bg: '#0d0e11', accent: '#f4f4f5', accent2: '#a1a1aa', ink: '#f4f4f5' },
+  { id: 'retro',     label: 'Carmesim',       tone: 'dark',   icon: 'disc',    bg: '#0c0709', accent: '#f43f5e', accent2: '#fb923c', ink: '#fff1f2' },
+  { id: 'neon',      label: 'Neon',           tone: 'dark',   icon: 'bolt',    bg: '#08070d', accent: '#d946ef', accent2: '#06b6d4', ink: '#faf5ff' },
+  { id: 'flowers',   label: 'Flowers',        tone: 'dark',   icon: 'flower',  bg: '#150c12', accent: '#f4a5b8', accent2: '#8ec49e', ink: '#fdf3f6' },
+  { id: 'march',     label: 'March',          tone: 'dark',   icon: 'flame',   bg: '#0c0a09', accent: '#f59e0b', accent2: '#ef4444', ink: '#f6efe8' },
+  { id: 'amanhecer', label: 'Alvorada',       tone: 'light',  icon: 'sun',     bg: '#faf6f0', accent: '#ea580c', accent2: '#f59e0b', ink: '#292524' },
+  { id: 'neve',      label: 'Neve',           tone: 'light',  icon: 'snow',    bg: '#f8fafc', accent: '#2563eb', accent2: '#38bdf8', ink: '#0f172a' },
+  { id: 'custom',    label: 'Personalizado',  tone: 'custom', icon: 'palette', bg: '#0a0e1e', accent: '#8fa2ff', accent2: '#5fe3c4', ink: '#edf1ff' }
 ];
 
 const WALLPAPERS = [
-  { id: 'aurora',  label: 'Aurora',   bg: 'radial-gradient(85% 70% at 15% 18%, rgba(92,150,255,.34), transparent 62%), radial-gradient(70% 60% at 82% 10%, rgba(148,96,240,.26), transparent 62%), radial-gradient(90% 80% at 58% 92%, rgba(52,214,188,.18), transparent 60%), linear-gradient(180deg, #0a0e1e 0%, #05070f 100%)' },
-  { id: 'poente',  label: 'Poente',  bg: 'radial-gradient(75% 55% at 72% 80%, rgba(255,148,96,.40), transparent 64%), linear-gradient(195deg, #191031 0%, #3f1a4c 42%, #7d2b55 72%, #c0564f 100%)' },
-  { id: 'oceano',  label: 'Oceano',  bg: 'radial-gradient(80% 60% at 24% 14%, rgba(64,178,216,.28), transparent 62%), radial-gradient(75% 65% at 82% 82%, rgba(32,102,176,.34), transparent 64%), linear-gradient(180deg, #04182e 0%, #020d1a 100%)' },
-  { id: 'cosmos',  label: 'Cosmos',  bg: 'radial-gradient(1.4px 1.4px at 12% 25%, rgba(255,255,255,.85), transparent 100%), radial-gradient(1.2px 1.2px at 28% 68%, rgba(255,255,255,.70), transparent 100%), radial-gradient(1.3px 1.3px at 45% 18%, rgba(255,255,255,.80), transparent 100%), radial-gradient(1.1px 1.1px at 58% 42%, rgba(255,255,255,.62), transparent 100%), radial-gradient(1.3px 1.3px at 72% 75%, rgba(255,255,255,.72), transparent 100%), radial-gradient(1.2px 1.2px at 88% 30%, rgba(255,255,255,.78), transparent 100%), radial-gradient(80% 70% at 50% 108%, rgba(130,72,215,.34), transparent 65%), linear-gradient(180deg, #0a0416 0%, #060214 100%)' },
-  { id: 'floresta', label: 'Floresta', bg: 'radial-gradient(80% 60% at 18% 82%, rgba(62,178,120,.20), transparent 64%), radial-gradient(70% 55% at 82% 12%, rgba(178,214,122,.14), transparent 62%), linear-gradient(180deg, #0b1712 0%, #061009 100%)' },
-  { id: 'madrugada', label: 'Madrugada', bg: 'radial-gradient(85% 60% at 76% 18%, rgba(255,186,168,.42), transparent 64%), radial-gradient(70% 60% at 18% 88%, rgba(170,194,255,.40), transparent 64%), linear-gradient(180deg, #fbe8da 0%, #edf2ff 100%)' },
-  { id: 'mono',    label: 'Mono',     bg: 'radial-gradient(90% 70% at 50% 24%, rgba(255,255,255,.06), transparent 62%), linear-gradient(180deg, #17181c 0%, #0e0f13 100%)' },
-  { id: 'nevoa',   label: 'Névoa',    bg: 'radial-gradient(70% 60% at 22% 30%, rgba(176,196,214,.20), transparent 66%), radial-gradient(75% 65% at 78% 72%, rgba(120,140,168,.16), transparent 66%), linear-gradient(165deg, #12161c 0%, #0a0d11 100%)' },
-  { id: 'areia',   label: 'Areia',    bg: 'radial-gradient(80% 60% at 28% 20%, rgba(232,196,146,.26), transparent 64%), radial-gradient(70% 60% at 82% 84%, rgba(150,110,78,.22), transparent 66%), linear-gradient(180deg, #19120c 0%, #0c0906 100%)' },
-  { id: 'grafite', label: 'Grafite',  bg: 'linear-gradient(140deg, rgba(255,255,255,.055) 0%, transparent 42%), radial-gradient(65% 55% at 72% 18%, rgba(198,208,228,.10), transparent 62%), linear-gradient(180deg, #14161b 0%, #0b0c10 100%)' },
-  { id: 'flowers', label: 'Flowers',  bg: 'radial-gradient(80% 62% at 22% 84%, rgba(244,165,184,.24), transparent 64%), radial-gradient(70% 58% at 80% 18%, rgba(142,196,158,.16), transparent 62%), radial-gradient(90% 70% at 50% 45%, rgba(190,104,138,.14), transparent 66%), linear-gradient(180deg, #1b0f17 0%, #0d070b 100%)' },
-  { id: 'march',   label: 'March',    bg: 'radial-gradient(85% 52% at 50% 100%, rgba(239,68,68,.24), transparent 64%), radial-gradient(70% 50% at 24% 82%, rgba(245,158,11,.18), transparent 62%), radial-gradient(75% 60% at 76% 18%, rgba(120,90,72,.14), transparent 62%), linear-gradient(180deg, #14100e 0%, #080605 100%)' },
-  { id: 'nenhum',  label: 'Tema puro', bg: '' }
+  { id: 'aurora',    label: 'Aurora',    group: 'atmosphere', bg: 'radial-gradient(85% 70% at 15% 18%, rgba(92,150,255,.34), transparent 62%), radial-gradient(70% 60% at 82% 10%, rgba(148,96,240,.26), transparent 62%), radial-gradient(90% 80% at 58% 92%, rgba(52,214,188,.18), transparent 60%), linear-gradient(180deg, #0a0e1e 0%, #05070f 100%)' },
+  { id: 'oceano',    label: 'Oceano',    group: 'atmosphere', bg: 'radial-gradient(80% 60% at 24% 14%, rgba(64,178,216,.28), transparent 62%), radial-gradient(75% 65% at 82% 82%, rgba(32,102,176,.34), transparent 64%), linear-gradient(180deg, #04182e 0%, #020d1a 100%)' },
+  { id: 'floresta',  label: 'Floresta',  group: 'atmosphere', bg: 'radial-gradient(80% 60% at 18% 82%, rgba(62,178,120,.20), transparent 64%), radial-gradient(70% 55% at 82% 12%, rgba(178,214,122,.14), transparent 62%), linear-gradient(180deg, #0b1712 0%, #061009 100%)' },
+  { id: 'cosmos',    label: 'Cosmos',    group: 'atmosphere', bg: 'radial-gradient(1.5px 1.5px at 14% 22%, rgba(236,244,255,.88), transparent 100%), radial-gradient(1.2px 1.2px at 26% 64%, rgba(214,228,255,.68), transparent 100%), radial-gradient(1.6px 1.6px at 39% 34%, rgba(255,255,255,.82), transparent 100%), radial-gradient(1.1px 1.1px at 51% 78%, rgba(224,232,255,.58), transparent 100%), radial-gradient(1.5px 1.5px at 63% 19%, rgba(240,246,255,.84), transparent 100%), radial-gradient(1.2px 1.2px at 74% 52%, rgba(218,230,255,.64), transparent 100%), radial-gradient(1.5px 1.5px at 86% 28%, rgba(255,255,255,.80), transparent 100%), radial-gradient(1.2px 1.2px at 89% 74%, rgba(206,224,255,.58), transparent 100%), radial-gradient(75% 58% at 24% 28%, rgba(74,116,220,.24), transparent 64%), radial-gradient(68% 54% at 74% 72%, rgba(132,90,214,.22), transparent 66%), radial-gradient(56% 42% at 54% 48%, rgba(76,184,204,.11), transparent 68%), linear-gradient(175deg, #040712 0%, #090d20 52%, #050611 100%)' },
+  { id: 'poente',    label: 'Poente',    group: 'atmosphere', bg: 'radial-gradient(88% 48% at 68% 82%, rgba(251,158,108,.36), transparent 64%), radial-gradient(70% 52% at 24% 88%, rgba(212,92,130,.24), transparent 68%), radial-gradient(62% 46% at 50% 24%, rgba(86,62,136,.24), transparent 66%), linear-gradient(180deg, #0b0a1b 0%, #1c1535 34%, #442346 68%, #6d3145 88%, #1d101b 100%)' },
+  { id: 'flowers',   label: 'Flowers',   group: 'atmosphere', bg: 'radial-gradient(80% 62% at 22% 84%, rgba(244,165,184,.24), transparent 64%), radial-gradient(70% 58% at 80% 18%, rgba(142,196,158,.16), transparent 62%), radial-gradient(90% 70% at 50% 45%, rgba(190,104,138,.14), transparent 66%), linear-gradient(180deg, #1b0f17 0%, #0d070b 100%)' },
+  { id: 'march',     label: 'March',     group: 'atmosphere', bg: 'radial-gradient(85% 52% at 50% 100%, rgba(239,68,68,.24), transparent 64%), radial-gradient(70% 50% at 24% 82%, rgba(245,158,11,.18), transparent 62%), radial-gradient(75% 60% at 76% 18%, rgba(120,90,72,.14), transparent 62%), linear-gradient(180deg, #14100e 0%, #080605 100%)' },
+  { id: 'areia',     label: 'Areia',     group: 'atmosphere', bg: 'radial-gradient(80% 60% at 28% 20%, rgba(232,196,146,.26), transparent 64%), radial-gradient(70% 60% at 82% 84%, rgba(150,110,78,.22), transparent 66%), linear-gradient(180deg, #19120c 0%, #0c0906 100%)' },
+  { id: 'nevoa',     label: 'Névoa',     group: 'atmosphere', bg: 'radial-gradient(70% 60% at 22% 30%, rgba(176,196,214,.20), transparent 66%), radial-gradient(75% 65% at 78% 72%, rgba(120,140,168,.16), transparent 66%), linear-gradient(165deg, #12161c 0%, #0a0d11 100%)' },
+  { id: 'brisa',     label: 'Brisa',     group: 'light',      bg: 'radial-gradient(82% 58% at 22% 16%, rgba(176,216,255,.46), transparent 64%), radial-gradient(74% 58% at 84% 82%, rgba(182,234,220,.38), transparent 64%), linear-gradient(180deg, #f8fbff 0%, #edf4fa 100%)' },
+  { id: 'madrugada', label: 'Madrugada', group: 'light',      bg: 'radial-gradient(85% 60% at 76% 18%, rgba(255,186,168,.42), transparent 64%), radial-gradient(70% 60% at 18% 88%, rgba(170,194,255,.40), transparent 64%), linear-gradient(180deg, #fbe8da 0%, #edf2ff 100%)' },
+  { id: 'mono',      label: 'Mono',      group: 'light',      bg: 'radial-gradient(90% 70% at 50% 24%, rgba(255,255,255,.06), transparent 62%), linear-gradient(180deg, #17181c 0%, #0e0f13 100%)' },
+  { id: 'grafite',   label: 'Grafite',   group: 'light',      bg: 'linear-gradient(140deg, rgba(255,255,255,.055) 0%, transparent 42%), radial-gradient(65% 55% at 72% 18%, rgba(198,208,228,.10), transparent 62%), linear-gradient(180deg, #14161b 0%, #0b0c10 100%)' },
+  { id: 'nenhum',    label: 'Tema puro', group: 'light',      bg: '' }
 ];
 
 function getThemeLabel(id) {

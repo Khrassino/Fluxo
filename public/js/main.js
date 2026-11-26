@@ -28,6 +28,7 @@ async function boot() {
   TasksPage.init();
 
   Usage.start();
+  if (typeof Welcome !== 'undefined') Welcome.init();
   Router.init();
   Panel.init();
   Idle.init();
@@ -58,14 +59,16 @@ async function boot() {
     }
   });
 
-  // dica de primeira visita
+  // dica de primeira visita (evita duplicidade/sobreposição com o guia da tela inicial)
   if (!Store.state.meta.seenTip) {
     Store.state.meta.seenTip = true;
     Store.save();
-    const tip = typeof getLang === 'function' && getLang() === 'en'
-      ? 'Tap the bubble to navigate, drag to move it and customize everything'
-      : 'Toque na bolinha para navegar, arraste para movê-la e personalizar tudo';
-    setTimeout(() => toast(tip, 'sparkle'), 1400);
+    if (Store.state.meta.seenPages && Store.state.meta.seenPages.home) {
+      const tip = typeof getLang === 'function' && getLang() === 'en'
+        ? 'Tap the bubble to navigate, drag to move it and customize everything'
+        : 'Toque na bolinha para navegar, arraste para movê-la e personalizar tudo';
+      setTimeout(() => toast(tip, 'sparkle'), 1400);
+    }
   }
 }
 

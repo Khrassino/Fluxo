@@ -404,6 +404,9 @@ const Router = {
     if (typeof Workspace !== 'undefined' && typeof Workspace.syncDockClearance === 'function') {
       Workspace.syncDockClearance();
     }
+    if (typeof Welcome !== 'undefined' && typeof Welcome.syncPlacement === 'function') {
+      Welcome.syncPlacement();
+    }
     if (!animate || !fromRect) return;
 
     const target = dock.getBoundingClientRect();
@@ -496,6 +499,7 @@ const Router = {
     if (typeof Motion !== 'undefined') Motion.setSuspended(next === 'workspace');
 
     if (changed && document.body.classList.contains('panel-open')) Panel.render();
+    if (typeof Welcome !== 'undefined' && typeof Welcome.onRoute === 'function') Welcome.onRoute(next);
     document.title = tr('title.' + next, next === 'home' ? 'Fluxo' : this.routeLabel(next) + ' · Fluxo');
   }
 };

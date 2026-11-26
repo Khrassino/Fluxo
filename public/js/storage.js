@@ -177,7 +177,17 @@ const Store = {
           { id: 'goal',   on: true }
         ]
       },
-      meta: { firstDay: null, seenTip: false }
+      meta: {
+        firstDay: null,
+        seenTip: false,
+        seenPages: {
+          home: false,
+          timer: false,
+          tracker: false,
+          tasks: false,
+          workspace: false
+        }
+      }
     };
   },
 
@@ -213,6 +223,13 @@ const Store = {
       // estilos de partículas: o antigo "rain" (ondas) virou "waves" e o novo "rain" são gotas.
       // A conversão roda UMA vez (marca meta.fxStyleV); depois disso o usuário pode escolher Chuva.
       if (!this.state.meta) this.state.meta = { firstDay: null, seenTip: false };
+      if (!this.state.meta.seenPages || typeof this.state.meta.seenPages !== 'object') {
+        this.state.meta.seenPages = Object.assign({}, base.meta.seenPages);
+      } else {
+        Object.keys(base.meta.seenPages).forEach(page => {
+          this.state.meta.seenPages[page] = !!this.state.meta.seenPages[page];
+        });
+      }
       let migrated = false;
       if (this.fresh) {
         this.state.meta.fxStyleV = 1;

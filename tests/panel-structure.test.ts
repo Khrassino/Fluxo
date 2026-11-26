@@ -198,3 +198,75 @@ test('ACCENT_PRESETS includes all standard accent swatches', () => {
   assert.equal(presets.length, 6);
   assert.ok(presets.every(p => p.id.startsWith('#') && p.label.length > 0));
 });
+
+test('THEMES and WALLPAPERS are organized by tone/group, include new lighter brisa wallpaper, and refine cosmos and poente', () => {
+  const ctx = loadFluxoContext();
+  vm.runInContext(fs.readFileSync(path.resolve(process.cwd(), 'public/js/i18n.js'), 'utf8'), ctx);
+  vm.runInContext('Store.load()', ctx);
+
+  const info = JSON.parse(vm.runInContext(`(() => {
+    const themeSec = Panel.themesSection();
+    const wpSec = Panel.appearanceSection();
+    const collectClasses = (node, out = []) => {
+      if (!node) return out;
+      if (node.className) out.push(node.className);
+      if (Array.isArray(node.children)) node.children.forEach(c => collectClasses(c, out));
+      return out;
+    };
+    const countClass = (node, token) => collectClasses(node).filter(c => c.split(/\\s+/).includes(token)).length;
+
+    const brisa = WALLPAPERS.find(w => w.id === 'brisa');
+    const cosmos = WALLPAPERS.find(w => w.id === 'cosmos');
+    const poente = WALLPAPERS.find(w => w.id === 'poente');
+
+    return JSON.stringify({
+      themeIds: THEMES.map(t => t.id),
+      themeTones: THEMES.map(t => t.tone),
+      wpIds: WALLPAPERS.map(w => w.id),
+      wpGroups: WALLPAPERS.map(w => w.group),
+      themeMiniLabels: countClass(themeSec, 'panel-mini-label'),
+      themeCards: countClass(themeSec, 'theme-card'),
+      themeCustomWrap: countClass(themeSec, 'theme-grid-custom'),
+      wpMiniLabels: countClass(wpSec, 'panel-mini-label'),
+      wpCards: countClass(wpSec, 'wall-card'),
+      wpThumbs: countClass(wpSec, 'wall-thumb'),
+      brisaBg: brisa ? brisa.bg : '',
+      cosmosBg: cosmos ? cosmos.bg : '',
+      poenteBg: poente ? poente.bg : '',
+      ptBrisa: I18N_DICT.pt['wp.brisa'],
+      enBrisa: I18N_DICT.en['wp.brisa'],
+      ptDarkGroup: I18N_DICT.pt['panel.themes.darkGroup'],
+      enDarkGroup: I18N_DICT.en['panel.themes.darkGroup'],
+      ptAtmos: I18N_DICT.pt['panel.app.wpAtmos'],
+      enMinimal: I18N_DICT.en['panel.app.wpMinimal'],
+    });
+  })()`, ctx));
+
+  assert.equal(info.themeIds.length, 11);
+  assert.deepEqual(info.themeTones.slice(0, 8), Array(8).fill('dark'));
+  assert.deepEqual(info.themeTones.slice(8, 10), ['light', 'light']);
+  assert.equal(info.themeTones[10], 'custom');
+
+  assert.equal(info.wpIds[0], 'aurora');
+  assert.ok(info.wpIds.includes('brisa'));
+  assert.equal(info.wpGroups.filter((g: string) => g === 'atmosphere').length, 9);
+  assert.equal(info.wpGroups.filter((g: string) => g === 'light').length, 5);
+
+  assert.equal(info.themeMiniLabels, 2);
+  assert.equal(info.themeCards, 11);
+  assert.equal(info.themeCustomWrap, 1);
+
+  assert.equal(info.wpMiniLabels, 2);
+  assert.equal(info.wpCards, 15);
+  assert.equal(info.wpThumbs, 15);
+
+  assert.match(info.brisaBg, /#f8fbff/i);
+  assert.match(info.cosmosBg, /#040712/i);
+  assert.match(info.poenteBg, /#0b0a1b/i);
+  assert.equal(info.ptBrisa, 'Brisa');
+  assert.equal(info.enBrisa, 'Breeze');
+  assert.equal(info.ptDarkGroup, 'Escuros');
+  assert.equal(info.enDarkGroup, 'Dark');
+  assert.equal(info.ptAtmos, 'Atmosféricos');
+  assert.equal(info.enMinimal, 'Light & neutral');
+});

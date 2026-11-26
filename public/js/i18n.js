@@ -365,11 +365,17 @@ const I18N_DICT = {
     'theme.march': 'March',
     'theme.custom': 'Personalizado',
 
+    'panel.themes.darkGroup': 'Escuros',
+    'panel.themes.lightGroup': 'Claros',
+    'panel.app.wpAtmos': 'Atmosféricos',
+    'panel.app.wpMinimal': 'Claros e neutros',
+
     'wp.aurora': 'Aurora',
     'wp.poente': 'Poente',
     'wp.oceano': 'Oceano',
     'wp.cosmos': 'Cosmos',
     'wp.floresta': 'Floresta',
+    'wp.brisa': 'Brisa',
     'wp.madrugada': 'Madrugada',
     'wp.mono': 'Mono',
     'wp.nevoa': 'Névoa',
@@ -1084,7 +1090,46 @@ const I18N_DICT = {
     'ws.timer.opacityLabel': 'Transparência',
     'ws.timer.resetPos': 'Posição padrão',
     'ws.timer.hide': 'Ocultar',
-    'ws.timer.winNote': 'Arraste pelo topo para mover; o botão de seta minimiza em bolinha.'
+    'ws.timer.winNote': 'Arraste pelo topo para mover; o botão de seta minimiza em bolinha.',
+
+    'welcome.ariaLabel': 'Guia inicial da página',
+    'welcome.closeAria': 'Fechar guia',
+    'welcome.gotIt': 'Entendi',
+    'welcome.skipAll': 'Ocultar todos',
+    'welcome.home.kicker': 'Primeiros passos · Início',
+    'welcome.home.title': 'Seu ponto de partida calmo',
+    'welcome.home.desc': 'Aqui ficam as horas, uma citação opcional e atalhos diretos para começar o seu foco.',
+    'welcome.home.tip1': 'Toque ou arraste a bolinha inferior para navegar entre páginas.',
+    'welcome.home.tip2': 'Em Personalizar, ajuste tema, fonte, música e citações.',
+    'welcome.home.tip3': 'Use os atalhos abaixo do relógio para iniciar foco ou tarefas.',
+    'welcome.timer.kicker': 'Primeiros passos · Tempo',
+    'welcome.timer.title': 'Foque sem distrações',
+    'welcome.timer.desc': 'Alterne entre temporizador por blocos e cronômetro livre no seu ritmo.',
+    'welcome.timer.tip1': 'Escolha Foco, Pausa, Descanso ou personalize suas durações.',
+    'welcome.timer.tip2': 'Pressione Espaço para iniciar/pausar, R reinicia e S alterna.',
+    'welcome.timer.tip3': 'No modo minimalista, segure o círculo central para ações rápidas.',
+    'welcome.tracker.kicker': 'Primeiros passos · Progresso',
+    'welcome.tracker.title': 'Acompanhe sua consistência',
+    'welcome.tracker.desc': 'Veja horas de uso, sessões de foco e tarefas concluídas ao longo dos dias.',
+    'welcome.tracker.tip1': 'Troque entre barras, linha, grade e anel nos controles do gráfico.',
+    'welcome.tracker.tip2': 'Ative cartões extras ou um segundo gráfico em Personalizar.',
+    'welcome.tracker.tip3': 'Exporte seus dados ou faça backup completo quando quiser.',
+    'welcome.tasks.kicker': 'Primeiros passos · Tarefas',
+    'welcome.tasks.title': 'Organize o essencial',
+    'welcome.tasks.desc': 'Anote pendências rápidas com prazo, prioridade, tags e subtarefas internas.',
+    'welcome.tasks.tip1': 'Digite e pressione Enter para criar; defina prazo, prioridade e #tag.',
+    'welcome.tasks.tip2': 'Pressione / para buscar ou dê duplo clique no texto para editar.',
+    'welcome.tasks.tip3': 'Clique em uma tarefa para abrir notas e subtarefas.',
+    'welcome.workspace.kicker': 'Primeiros passos · Área de Trabalho',
+    'welcome.workspace.title': 'Quadro infinito de ideias',
+    'welcome.workspace.desc': 'Reúna notas, conceitos, checklists, PDFs, imagens e desenhos num espaço livre.',
+    'welcome.workspace.tip1': 'Dê duplo clique no fundo ou use + Novo para criar cartões.',
+    'welcome.workspace.tip2': 'Ligue cartões com setas, agrupe seleções e desenhe com D.',
+    'welcome.workspace.tip3': 'Ctrl+V cola imagens · Ctrl+Z desfaz · crie até 5 quadros.',
+    'panel.general.guidesSub': 'Guias de boas-vindas',
+    'panel.general.guidesReplay': 'Mostrar boas-vindas novamente',
+    'panel.general.guidesNote': 'Reexibe o cartão ilustrativo de introdução na primeira abertura de cada página.',
+    'panel.general.guidesToast': 'Boas-vindas reativadas em todas as páginas'
   },
 
   en: {
@@ -1450,11 +1495,17 @@ const I18N_DICT = {
     'theme.march': 'March',
     'theme.custom': 'Custom',
 
+    'panel.themes.darkGroup': 'Dark',
+    'panel.themes.lightGroup': 'Light',
+    'panel.app.wpAtmos': 'Atmospheric',
+    'panel.app.wpMinimal': 'Light & neutral',
+
     'wp.aurora': 'Aurora',
     'wp.poente': 'Sunset',
     'wp.oceano': 'Ocean',
     'wp.cosmos': 'Cosmos',
     'wp.floresta': 'Forest',
+    'wp.brisa': 'Breeze',
     'wp.madrugada': 'Daybreak',
     'wp.mono': 'Mono',
     'wp.nevoa': 'Mist',
@@ -2169,7 +2220,46 @@ const I18N_DICT = {
     'ws.timer.opacityLabel': 'Transparency',
     'ws.timer.resetPos': 'Default position',
     'ws.timer.hide': 'Hide',
-    'ws.timer.winNote': 'Drag by the header to move; arrow button minimizes to a bubble.'
+    'ws.timer.winNote': 'Drag by the header to move; arrow button minimizes to a bubble.',
+
+    'welcome.ariaLabel': 'Page quick guide',
+    'welcome.closeAria': 'Close guide',
+    'welcome.gotIt': 'Got it',
+    'welcome.skipAll': 'Hide all',
+    'welcome.home.kicker': 'Getting started · Home',
+    'welcome.home.title': 'Your calm starting point',
+    'welcome.home.desc': 'Keep the clock, an optional quote, and direct shortcuts to jump right into focus.',
+    'welcome.home.tip1': 'Tap or drag the bottom bubble to switch pages and dock it anywhere.',
+    'welcome.home.tip2': 'Open Customize to change themes, fonts, ambient sound, and quotes.',
+    'welcome.home.tip3': 'Use the shortcuts below the clock to launch focus or tasks.',
+    'welcome.timer.kicker': 'Getting started · Timer',
+    'welcome.timer.title': 'Focus without distractions',
+    'welcome.timer.desc': 'Switch between structured focus blocks and a free stopwatch at your own pace.',
+    'welcome.timer.tip1': 'Pick Focus, Short, Long, or customize your own durations.',
+    'welcome.timer.tip2': 'Press Space to start/pause, R to reset, and S to skip.',
+    'welcome.timer.tip3': 'In minimalist view, press and hold the center ring for quick actions.',
+    'welcome.tracker.kicker': 'Getting started · Progress',
+    'welcome.tracker.title': 'Track your consistency',
+    'welcome.tracker.desc': 'Review active hours, focus sessions, and completed tasks across days and months.',
+    'welcome.tracker.tip1': 'Switch between bars, line, grid, and ring in the chart toolbar.',
+    'welcome.tracker.tip2': 'Enable extra summary cards or a second chart in Customize.',
+    'welcome.tracker.tip3': 'Export your stats or create a full JSON backup anytime.',
+    'welcome.tasks.kicker': 'Getting started · Tasks',
+    'welcome.tasks.title': 'Organize what matters',
+    'welcome.tasks.desc': 'Capture tasks quickly with due dates, priority levels, #tags, and subtasks.',
+    'welcome.tasks.tip1': 'Type and press Enter to add; set due date, priority, and #tag.',
+    'welcome.tasks.tip2': 'Press / to search or double-click any task text to rename it.',
+    'welcome.tasks.tip3': 'Click a task row to expand notes and checklists inside it.',
+    'welcome.workspace.kicker': 'Getting started · Workspace',
+    'welcome.workspace.title': 'Infinite board for your ideas',
+    'welcome.workspace.desc': 'Combine notes, concepts, checklists, PDFs, images, and freehand ink in one place.',
+    'welcome.workspace.tip1': 'Double-click the canvas or press + New to create cards.',
+    'welcome.workspace.tip2': 'Connect cards with arrows, group selections, or draw with D.',
+    'welcome.workspace.tip3': 'Ctrl+V pastes screenshots · Ctrl+Z undoes · manage up to 5 boards.',
+    'panel.general.guidesSub': 'Welcome cards',
+    'panel.general.guidesReplay': 'Show welcome cards again',
+    'panel.general.guidesNote': 'Re-enables the introductory guide card the next time you open each page.',
+    'panel.general.guidesToast': 'Welcome cards re-enabled for all pages'
   }
 };
 
@@ -2265,6 +2355,9 @@ const I18n = {
     if (typeof LayoutEdit !== 'undefined' && LayoutEdit.active) {
       LayoutEdit.buildBar();
       LayoutEdit.decorate();
+    }
+    if (typeof Welcome !== 'undefined' && typeof Welcome.syncLanguage === 'function') {
+      Welcome.syncLanguage();
     }
     if (typeof Panel !== 'undefined') Panel.render();
   }

@@ -43,7 +43,7 @@ function wsCursorCss() {
 
 const WS_BG_SWATCHES = [
   '',        '#0b0f1a', '#121826', '#1b1b24', '#22252e', '#111d1a', '#201815',
-  '#f7f8fb', '#f4f1ea', '#e9eef7', '#dce8e4', '#f3e6df', '#ebe7f5', '#f2edd7'
+  '#ffffff', '#dfe3e8', '#f4e5b8', '#bdd9f7', '#bde3d0', '#f6c4c6', '#d7c8f5'
 ];
 
 const WS_HL_COLORS = [

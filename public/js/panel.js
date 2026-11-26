@@ -418,11 +418,11 @@ const Panel = {
     const themeLockGroup = pGroup(musicLocked);
     themeLockGroup.append(pSub(tr('panel.themes.sub', 'Tema')));
     const themeCtl = pCtl();
-    const tGrid = el('div', 'theme-grid');
-    THEMES.forEach(item => {
+
+    const makeThemeCard = (item, extraCls) => {
       const label = typeof getThemeLabel === 'function' ? getThemeLabel(item.id) : item.label;
       const active = item.id === a.theme;
-      const b = el('button', 'theme-card' + (active ? ' active' : ''));
+      const b = el('button', 'theme-card' + (extraCls ? ' ' + extraCls : '') + (active ? ' active' : ''));
       b.type = 'button';
       b.dataset.theme = item.id;
       b.title = label;
@@ -437,9 +437,9 @@ const Panel = {
       b.style.setProperty('--tc-accent2', accent2);
       b.style.setProperty('--tc-ink', ink);
       b.innerHTML =
-        '<span class="theme-glyph">' + svgIcon(item.icon || 'palette') + '</span>' +
-        '<span class="theme-dots"><i></i><i></i></span>' +
-        '<span class="theme-name">' + label + '</span>';
+        '<span class="theme-dots" aria-hidden="true"><i></i><i></i></span>' +
+        '<span class="theme-name">' + label + '</span>' +
+        '<span class="theme-check" aria-hidden="true">' + (active ? svgIcon('check') : '') + '</span>';
       b.addEventListener('click', () => {
         if (b.disabled) return;
         Store.state.appearance.theme = item.id;
@@ -447,9 +447,31 @@ const Panel = {
         Store.save();
         this.render();
       });
-      tGrid.append(b);
-    });
-    themeCtl.append(tGrid);
+      return b;
+    };
+
+    const darkThemes = THEMES.filter(item => item.tone !== 'light' && item.tone !== 'custom');
+    const lightThemes = THEMES.filter(item => item.tone === 'light');
+    const customThemeItem = THEMES.find(item => item.id === 'custom');
+
+    if (darkThemes.length) {
+      themeCtl.append(el('div', 'panel-mini-label', tr('panel.themes.darkGroup', 'Escuros')));
+      const darkGrid = el('div', 'theme-grid');
+      darkThemes.forEach(item => darkGrid.append(makeThemeCard(item)));
+      themeCtl.append(darkGrid);
+    }
+    if (lightThemes.length) {
+      themeCtl.append(el('div', 'panel-mini-label', tr('panel.themes.lightGroup', 'Claros')));
+      const lightGrid = el('div', 'theme-grid');
+      lightThemes.forEach(item => lightGrid.append(makeThemeCard(item)));
+      themeCtl.append(lightGrid);
+    }
+    if (customThemeItem) {
+      const customWrap = el('div', 'theme-grid theme-grid-custom');
+      customWrap.append(makeThemeCard(customThemeItem, 'theme-card-custom'));
+      themeCtl.append(customWrap);
+    }
+
     themeLockGroup.append(themeCtl);
 
     if (a.theme === 'custom') {
@@ -511,47 +533,8 @@ const Panel = {
     const wpGroup = pGroup(musicLocked);
     wpGroup.append(pSub(tr('panel.app.wallpaper', 'Papel de parede')));
     const wpCtl = pCtl();
-    const wGrid = el('div', 'wall-grid');
-    WALLPAPERS.forEach(w => {
-      const label = typeof getWallpaperLabel === 'function' ? getWallpaperLabel(w.id) : w.label;
-      const active = w.id === a.wallpaper;
-      const b = el('button', 'wall-card' + (active ? ' active' : ''));
-      b.type = 'button';
-      b.style.background = w.id === 'nenhum' ? 'var(--bg)' : w.bg;
-      b.title = label;
-      b.setAttribute('aria-pressed', active ? 'true' : 'false');
-      b.innerHTML = '<span class="wall-name">' + label + '</span>';
-      b.addEventListener('click', () => {
-        if (b.disabled) return;
-        Store.state.appearance.wallpaper = w.id;
-        Themes.apply();
-        Store.save();
-        this.render();
-      });
-      wGrid.append(b);
-    });
-    const customActive = a.wallpaper === 'custom';
-    const custom = el('button', 'wall-card' + (customActive ? ' active' : ''));
-    custom.type = 'button';
-    custom.style.background = Themes.customWallpaperUrl
-      ? 'url("' + Themes.customWallpaperUrl + '") center/cover'
-      : 'var(--surface-2)';
-    const yourImg = tr('panel.app.yourImage', 'Sua imagem');
-    custom.title = yourImg;
-    custom.setAttribute('aria-pressed', customActive ? 'true' : 'false');
-    custom.innerHTML = '<span class="wall-name">' + yourImg + '</span>';
-    custom.addEventListener('click', () => {
-      if (custom.disabled) return;
-      if (!Themes.customWallpaperUrl) { toast(tr('panel.app.sendFirst', 'Envie uma imagem primeiro'), 'image'); return; }
-      Store.state.appearance.wallpaper = 'custom';
-      Themes.apply();
-      Store.save();
-      this.render();
-    });
-    wGrid.append(custom);
-    wpCtl.append(wGrid);
 
-    const wpBtns = [uploadBtn(Themes.customWallpaperUrl ? tr('panel.app.changeImage', 'Trocar imagem') : tr('panel.app.sendImage', 'Enviar imagem'), 'image/*', async (file) => {
+    const uploadControl = uploadBtn(Themes.customWallpaperUrl ? tr('panel.app.changeImage', 'Trocar imagem') : tr('panel.app.sendImage', 'Enviar imagem'), 'image/*', async (file) => {
       if (!file.type.startsWith('image/')) { toast(tr('panel.app.chooseImageErr', 'Escolha um arquivo de imagem'), 'close'); return; }
       if (file.size > 8 * 1024 * 1024) { toast(tr('panel.app.imageTooBig', 'Imagem muito grande (máx. 8 MB)'), 'close'); return; }
       try {
@@ -564,7 +547,78 @@ const Panel = {
         this.render();
         toast(tr('panel.app.imageSaved', 'Papel de parede atualizado'), 'image');
       } catch (e) { toast(tr('panel.app.imageSaveErr', 'Não foi possível salvar a imagem'), 'close'); }
-    })];
+    });
+
+    const makeWallCard = (w) => {
+      const label = typeof getWallpaperLabel === 'function' ? getWallpaperLabel(w.id) : w.label;
+      const active = w.id === a.wallpaper;
+      const b = el('button', 'wall-card' + (active ? ' active' : ''));
+      b.type = 'button';
+      b.dataset.wallpaper = w.id;
+      b.title = label;
+      b.setAttribute('aria-pressed', active ? 'true' : 'false');
+
+      const thumb = el('span', 'wall-thumb' + (w.id === 'nenhum' ? ' is-pure' : ''));
+      thumb.style.background = w.id === 'nenhum' ? 'var(--bg)' : w.bg;
+      if (w.id === 'nenhum') thumb.innerHTML = '<span class="wall-pure-dot" aria-hidden="true"></span>';
+
+      const name = el('span', 'wall-name', label);
+      b.append(thumb, name);
+      b.addEventListener('click', () => {
+        if (b.disabled) return;
+        Store.state.appearance.wallpaper = w.id;
+        Themes.apply();
+        Store.save();
+        this.render();
+      });
+      return b;
+    };
+
+    const atmosWps = WALLPAPERS.filter(w => w.group !== 'light');
+    const lightWps = WALLPAPERS.filter(w => w.group === 'light');
+
+    if (atmosWps.length) {
+      wpCtl.append(el('div', 'panel-mini-label', tr('panel.app.wpAtmos', 'Atmosféricos')));
+      const atmosGrid = el('div', 'wall-grid');
+      atmosWps.forEach(w => atmosGrid.append(makeWallCard(w)));
+      wpCtl.append(atmosGrid);
+    }
+
+    wpCtl.append(el('div', 'panel-mini-label', tr('panel.app.wpMinimal', 'Claros e neutros')));
+    const minGrid = el('div', 'wall-grid');
+    lightWps.forEach(w => minGrid.append(makeWallCard(w)));
+
+    const customActive = a.wallpaper === 'custom';
+    const custom = el('button', 'wall-card' + (customActive ? ' active' : ''));
+    custom.type = 'button';
+    custom.dataset.wallpaper = 'custom';
+    const yourImg = tr('panel.app.yourImage', 'Sua imagem');
+    custom.title = yourImg;
+    custom.setAttribute('aria-pressed', customActive ? 'true' : 'false');
+    const customThumb = el('span', 'wall-thumb' + (Themes.customWallpaperUrl ? '' : ' is-empty'));
+    if (Themes.customWallpaperUrl) {
+      customThumb.style.background = 'url("' + Themes.customWallpaperUrl + '") center / cover no-repeat';
+    } else {
+      customThumb.innerHTML = svgIcon('image');
+    }
+    custom.append(customThumb, el('span', 'wall-name', yourImg));
+    custom.addEventListener('click', () => {
+      if (custom.disabled) return;
+      if (!Themes.customWallpaperUrl) {
+        const fileInp = uploadControl.querySelector('input[type="file"]');
+        if (fileInp && typeof fileInp.click === 'function') fileInp.click();
+        else toast(tr('panel.app.sendFirst', 'Envie uma imagem primeiro'), 'image');
+        return;
+      }
+      Store.state.appearance.wallpaper = 'custom';
+      Themes.apply();
+      Store.save();
+      this.render();
+    });
+    minGrid.append(custom);
+    wpCtl.append(minGrid);
+
+    const wpBtns = [uploadControl];
     if (Themes.customWallpaperUrl) {
       const rm = el('button', 'chip', tr('panel.app.removeImage', 'Remover imagem'));
       rm.type = 'button';
@@ -2057,6 +2111,19 @@ const Panel = {
     goMusic.addEventListener('click', () => this.openDrawer('music'));
     musicShortcut.append(goMusic);
     sec.append(musicShortcut);
+
+    sec.append(pSub(tr('panel.general.guidesSub', 'Guias de boas-vindas')));
+    const replayGuidesBtn = el('button', 'chip', svgIcon('sparkle') + '<span>' + tr('panel.general.guidesReplay', 'Mostrar boas-vindas novamente') + '</span>');
+    replayGuidesBtn.type = 'button';
+    replayGuidesBtn.addEventListener('click', () => {
+      if (typeof Welcome !== 'undefined' && typeof Welcome.replayAll === 'function') {
+        this.close();
+        Welcome.replayAll();
+      }
+      toast(tr('panel.general.guidesToast', 'Boas-vindas reativadas em todas as páginas'), 'sparkle');
+    });
+    sec.append(actionRow([replayGuidesBtn]));
+    sec.append(el('p', 'panel-note', tr('panel.general.guidesNote', 'Reexibe o cartão ilustrativo de introdução na primeira abertura de cada página.')));
 
     sec.append(pSub(tr('panel.general.dataSub', 'Dados e backup')));
     sec.append(el('p', 'panel-note', tr('panel.general.dataSummary', '{days} dias · {hours} de uso · {tasks} tarefas realizadas.', {

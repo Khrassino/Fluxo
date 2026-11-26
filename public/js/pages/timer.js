@@ -16,10 +16,90 @@ function timerHexToRgba(hex, alpha) {
   return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + alpha + ')';
 }
 
+const HALO_CARDINALS = [
+  { dir: 'up',    action: 'toggle', angle: -90 },
+  { dir: 'right', action: 'reset',  angle: 0   },
+  { dir: 'down',  action: 'preset', angle: 90  },
+  { dir: 'left',  action: 'mode',   angle: 180 }
+];
+
+function resolveHaloGesture(dx, dy, deadzone, maxReach) {
+  const dz = typeof deadzone === 'number' ? deadzone : 24;
+  const reachMax = typeof maxReach === 'number' && maxReach > 0 ? maxReach : 136;
+  const x = Number(dx) || 0;
+  const y = Number(dy) || 0;
+  const dist = Math.hypot(x, y);
+  const angRad = Math.atan2(y, x);
+  const angDeg = angRad * 180 / Math.PI;
+  const reach = Math.min(1, dist / reachMax);
+  const tetherR = Math.min(54, (dist / reachMax) * 54);
+  const tipX = +(100 + Math.cos(angRad) * tetherR).toFixed(2);
+  const tipY = +(100 + Math.sin(angRad) * tetherR).toFixed(2);
+
+  if (dist < dz) {
+    return { action: null, dir: null, dist, angDeg, snapDeg: null, reach, tipX, tipY };
+  }
+
+  let best = HALO_CARDINALS[0];
+  let bestDiff = Infinity;
+  for (let i = 0; i < HALO_CARDINALS.length; i++) {
+    const c = HALO_CARDINALS[i];
+    const dd = Math.abs(((angDeg - c.angle + 540) % 360) - 180);
+    if (dd < bestDiff) {
+      bestDiff = dd;
+      best = c;
+    }
+  }
+  return {
+    action: best.action,
+    dir: best.dir,
+    dist,
+    angDeg,
+    snapDeg: best.angle,
+    reach,
+    tipX,
+    tipY
+  };
+}
+
+function getHaloActionDetail(action, timerState, presets, translateFn) {
+  const t = timerState || {};
+  const trFn = typeof translateFn === 'function' ? translateFn : (k, fb) => fb;
+  const list = Array.isArray(presets) && presets.length ? presets : TIMER_PRESETS;
+  if (action === 'toggle') {
+    return t.running ? trFn('timer.pause', 'Pausar') : trFn('timer.start', 'Iniciar');
+  }
+  if (action === 'reset') {
+    return trFn('timer.halo.reset', 'Reiniciar');
+  }
+  if (action === 'preset') {
+    const order = list.map(p => p.id);
+    const idx = Math.max(0, order.indexOf(t.preset));
+    const nextId = order[(idx + 1) % order.length];
+    const def = list.find(p => p.id === nextId);
+    return trFn('timer.preset.' + nextId, def ? def.label : nextId);
+  }
+  if (action === 'mode') {
+    const nextTab = t.tab === 'countdown' ? 'stopwatch' : 'countdown';
+    return nextTab === 'stopwatch'
+      ? trFn('timer.tab.stopwatch', 'Cronômetro')
+      : trFn('timer.tab.countdown', 'Temporizador');
+  }
+  return '';
+}
+
 const TimerPage = {
   RING_C: 2 * Math.PI * 88, // circunferência do anel
   chars: [],
   lastText: '',
+
+  setTab(tab) {
+    const nextTab = tab === 'stopwatch' ? 'stopwatch' : 'countdown';
+    Store.state.timer.tab = nextTab;
+    this.resetRuntime();
+    Store.save();
+    this.syncUI();
+  },
 
   init() {
     // aplica configurações visuais salvas
@@ -28,10 +108,7 @@ const TimerPage = {
     // tabs
     $$('#page-timer .tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        Store.state.timer.tab = btn.dataset.tab;
-        this.resetRuntime();
-        Store.save();
-        this.syncUI();
+        this.setTab(btn.dataset.tab);
       });
     });
 
@@ -154,6 +231,8 @@ const TimerPage = {
     up: 'toggle', right: 'reset', down: 'preset', left: 'mode'
   },
 
+  HALO_RING_R: 76,
+
   presetLabel(id) {
     const def = TIMER_PRESETS.find(p => p.id === id);
     return tr('timer.preset.' + id, def ? def.label : id);
@@ -172,55 +251,115 @@ const TimerPage = {
     const stage = $('#page-timer .timer-stage');
     if (!halo || !stage) return;
 
-    halo.innerHTML = '';
+    const r = this.HALO_RING_R;
+    const c = +(2 * Math.PI * r).toFixed(2);
+    const q = +(c / 4).toFixed(2);
+
+    halo.innerHTML =
+      '<svg class="halo-orbit" viewBox="0 0 200 200" aria-hidden="true">' +
+        '<circle class="halo-track" cx="100" cy="100" r="' + r + '"></circle>' +
+        '<circle class="halo-inner-track" cx="100" cy="100" r="24"></circle>' +
+        '<circle class="halo-arc" id="halo-arc" cx="100" cy="100" r="' + r + '" stroke-dasharray="' + q + ' ' + c + '"></circle>' +
+        '<line class="halo-tether" id="halo-tether" x1="100" y1="100" x2="100" y2="100"></line>' +
+        '<circle class="halo-tip" id="halo-tip" cx="100" cy="100" r="3"></circle>' +
+      '</svg>' +
+      '<div class="halo-center" aria-hidden="true">' +
+        '<span class="halo-origin"></span>' +
+      '</div>';
+
     this.HALO_ACTIONS.forEach(a => {
       const node = el('div', 'halo-act');
       node.dataset.action = a.id;
       node.dataset.dir = a.dir;
       node.innerHTML =
-        '<span class="halo-icon">' + svgIcon(a.icon) + '</span>' +
-        '<span class="halo-label">' + tr('timer.halo.' + a.id, a.label) + '</span>';
+        '<div class="halo-node">' +
+          '<span class="halo-icon">' + svgIcon(a.icon) + '</span>' +
+          '<span class="halo-label">' + tr('timer.halo.' + a.id, a.label) + '</span>' +
+        '</div>';
       halo.append(node);
     });
 
+    const tetherEl = $('#halo-tether');
+    const tipEl = $('#halo-tip');
+    const arcEl = $('#halo-arc');
+
     let origin = null;
     let active = null;
+    let currentArcDeg = -135;
+    let commitTimer = null;
 
-    const setActive = (action) => {
-      active = action;
-      $$('#timer-halo .halo-act').forEach(n => n.classList.toggle('active', n.dataset.action === action));
+    const resetVisualVector = () => {
+      if (tetherEl) {
+        tetherEl.setAttribute('x2', '100');
+        tetherEl.setAttribute('y2', '100');
+      }
+      if (tipEl) {
+        tipEl.setAttribute('cx', '100');
+        tipEl.setAttribute('cy', '100');
+      }
     };
 
-    const actionFor = (dx, dy) => {
-      if (Math.hypot(dx, dy) < 24) return null;
-      const ang = Math.atan2(dy, dx) * 180 / Math.PI;
-      const dirs = [
-        { dir: 'right', a: 0 },
-        { dir: 'down',  a: 90 },
-        { dir: 'left',  a: 180 },
-        { dir: 'up',    a: -90 }
-      ];
-      let best = null, diff = Infinity;
-      dirs.forEach(d => {
-        const dd = Math.abs(((ang - d.a + 540) % 360) - 180);
-        if (dd < diff) { diff = dd; best = d.dir; }
-      });
-      return this.HALO_DIRS[best] || null;
+    const setActive = (action, gesture) => {
+      active = action;
+      document.body.classList.toggle('halo-has-active', !!action);
+      $$('#timer-halo .halo-act').forEach(n => n.classList.toggle('active', n.dataset.action === action));
+
+      if (gesture && tetherEl && tipEl) {
+        tetherEl.setAttribute('x2', String(gesture.tipX));
+        tetherEl.setAttribute('y2', String(gesture.tipY));
+        tipEl.setAttribute('cx', String(gesture.tipX));
+        tipEl.setAttribute('cy', String(gesture.tipY));
+      }
+
+      if (arcEl && gesture && gesture.snapDeg != null) {
+        const targetDeg = gesture.snapDeg - 45;
+        let delta = ((targetDeg - currentArcDeg + 540) % 360) - 180;
+        currentArcDeg += delta;
+        arcEl.style.transform = 'rotate(' + currentArcDeg + 'deg)';
+      }
     };
 
     const onMove = (e) => {
       if (!origin) return;
-      setActive(actionFor(e.clientX - origin.x, e.clientY - origin.y));
+      const g = resolveHaloGesture(e.clientX - origin.x, e.clientY - origin.y, 24, origin.maxReach);
+      setActive(g.action, g);
+    };
+
+    const cleanup = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onCancel);
+      window.removeEventListener('blur', onCancel);
+      document.removeEventListener('keydown', onKey);
+    };
+
+    const onCancel = () => {
+      cleanup();
+      origin = null;
+      active = null;
+      resetVisualVector();
+      this.hideHalo();
+    };
+
+    const onKey = (e) => {
+      if (e.key === 'Escape') onCancel();
     };
 
     const onUp = () => {
-      document.removeEventListener('pointermove', onMove);
-      document.removeEventListener('pointerup', onUp);
-      document.removeEventListener('pointercancel', onUp);
+      cleanup();
       const action = active;
       origin = null;
+      active = null;
+      resetVisualVector();
       this.hideHalo();
-      if (action) this.haloAction(action);
+      if (action) {
+        clearTimeout(commitTimer);
+        stage.classList.remove('halo-commit');
+        void stage.offsetWidth;
+        stage.classList.add('halo-commit');
+        commitTimer = setTimeout(() => stage.classList.remove('halo-commit'), 380);
+        this.haloAction(action);
+      }
     };
 
     stage.addEventListener('pointerdown', (e) => {
@@ -229,12 +368,19 @@ const TimerPage = {
       if (e.button != null && e.button !== 0) return;
       e.preventDefault();
       const rect = stage.getBoundingClientRect();
-      origin = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-      setActive(null);
+      origin = {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+        maxReach: Math.max(84, rect.width * 0.42)
+      };
+      resetVisualVector();
+      setActive(null, null);
       this.showHalo();
       document.addEventListener('pointermove', onMove);
       document.addEventListener('pointerup', onUp);
-      document.addEventListener('pointercancel', onUp);
+      document.addEventListener('pointercancel', onCancel);
+      window.addEventListener('blur', onCancel);
+      document.addEventListener('keydown', onKey);
     });
   },
 
@@ -244,17 +390,31 @@ const TimerPage = {
   },
 
   hideHalo() {
-    document.body.classList.remove('halo-open');
+    document.body.classList.remove('halo-open', 'halo-has-active');
     $$('#timer-halo .halo-act').forEach(n => n.classList.remove('active'));
   },
 
   updateHalo() {
     const node = $('#timer-halo .halo-act[data-action="toggle"]');
     if (!node) return;
-    const running = Store.state.timer.running;
-    node.innerHTML =
-      '<span class="halo-icon">' + svgIcon(running ? 'pause' : 'play') + '</span>' +
-      '<span class="halo-label">' + (running ? tr('timer.pause', 'Pausar') : tr('timer.start', 'Iniciar')) + '</span>';
+    const running = !!Store.state.timer.running;
+    const nextLbl = running ? tr('timer.pause', 'Pausar') : tr('timer.start', 'Iniciar');
+    const iconEl = node.querySelector('.halo-icon');
+    const lblEl = node.querySelector('.halo-label');
+    if (iconEl && lblEl) {
+      if (node.dataset.running !== String(running)) {
+        node.dataset.running = String(running);
+        iconEl.innerHTML = svgIcon(running ? 'pause' : 'play');
+      }
+      if (lblEl.textContent !== nextLbl) lblEl.textContent = nextLbl;
+    } else {
+      node.dataset.running = String(running);
+      node.innerHTML =
+        '<div class="halo-node">' +
+          '<span class="halo-icon">' + svgIcon(running ? 'pause' : 'play') + '</span>' +
+          '<span class="halo-label">' + nextLbl + '</span>' +
+        '</div>';
+    }
   },
 
   haloAction(action) {
@@ -512,3 +672,5 @@ const TimerPage = {
     this.updateHalo();
   }
 };
+
+if (typeof window !== 'undefined') window.TimerPage = TimerPage;
